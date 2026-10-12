@@ -58,54 +58,43 @@ class PaymentValidationTest extends TestCase
             ->assertSessionHasErrors('payment');
     }
 
-    public function test_simulation_mode_validates_payment_from_the_app(): void
+    public function test_payment_info_lists_only_configured_merchant_numbers(): void
     {
-        Setting::put(['payment_mode' => 'simulation']);
-        $client = User::factory()->create();
-        $d = $this->delivery($client);
+        Setting::put(['flooz_merchant_number' => '99 00 00 00', 'mixx_merchant_number' => null]);
+        Sanctum::actingAs(User::factory()->create());
 
-        Sanctum::actingAs($client);
-        $this->getJson('/api/v1/payment-info')->assertJsonPath('mode', 'gateway')->assertJsonPath('gateway', 'simulation');
-
-        $res = $this->postJson("/api/v1/deliveries/{$d->id}/checkout", ['method' => 'flooz', 'phone' => '99000000'])
-            ->assertCreated()->assertJsonPath('mode', 'redirect');
-        $payment = Payment::firstOrFail();
-
-        $this->get($res->json('redirect_url'))->assertOk()->assertSee('MODE SIMULATION');
-        $this->post(route('checkout.simulate', $payment->checkout_token), ['result' => 'success'])
-            ->assertOk()->assertSee('Paiement confirmé');
-
-        $this->getJson("/api/v1/deliveries/{$d->id}/payments/{$payment->id}")
-            ->assertJsonPath('payment.status', 'verified')
-            ->assertJsonPath('delivery.payment_status', 'verified');
+        $this->getJson('/api/v1/payment-info')
+            ->assertOk()
+            ->assertJsonCount(1, 'methods')
+            ->assertJsonPath('methods.0.method', 'flooz')
+            ->assertJsonPath('methods.0.merchant_number', '99 00 00 00')
+            ->assertJsonMissingPath('mode');
     }
 
-    public function test_simulation_is_refused_once_mode_is_switched_off(): void
+    public function test_aggregator_routes_are_gone(): void
     {
-        Setting::put(['payment_mode' => 'simulation']);
         $client = User::factory()->create();
         $d = $this->delivery($client);
         Sanctum::actingAs($client);
-        $this->postJson("/api/v1/deliveries/{$d->id}/checkout", ['method' => 'flooz', 'phone' => '99000000'])->assertCreated();
-        $token = Payment::firstOrFail()->checkout_token;
 
-        Setting::put(['payment_mode' => 'manual']);
-        $this->post(route('checkout.simulate', $token), ['result' => 'success'])->assertOk();
-
-        $this->assertSame('unpaid', $d->refresh()->payment_status->value);
+        $this->postJson("/api/v1/deliveries/{$d->id}/checkout", ['method' => 'flooz', 'phone' => '99000000'])->assertNotFound();
+        $this->postJson('/api/v1/webhooks/kkiapay')->assertNotFound();
     }
 
-    public function test_admin_can_switch_payment_mode(): void
+    public function test_admin_settings_have_merchant_numbers_but_no_aggregator(): void
     {
         $admin = User::factory()->admin()->create();
-        $this->actingAs($admin)->get(route('admin.settings.edit'))->assertOk()->assertSee('Mode de paiement');
+        $this->actingAs($admin)->get(route('admin.settings.edit'))->assertOk()
+            ->assertSee('Paiement Flooz / Mixx by Yas')
+            ->assertDontSee('KKiaPay')
+            ->assertDontSee('Simulation');
 
         $this->actingAs($admin)->put(route('admin.settings.update'), [
-            'merchant_name' => 'VOOM Delivery', 'base_fee' => 500, 'per_km_fee' => 150,
-            'express_fee' => 1000, 'min_fee' => 1000, 'payment_mode' => 'simulation',
+            'merchant_name' => 'VOOM Delivery', 'flooz_merchant_number' => '99112233', 'base_fee' => 500,
+            'per_km_fee' => 150, 'express_fee' => 1000, 'min_fee' => 1000,
         ])->assertSessionHasNoErrors();
 
-        $this->assertSame('simulation', Setting::get('payment_mode'));
+        $this->assertSame('99112233', Setting::get('flooz_merchant_number'));
     }
 
     public function test_catalog_is_seeded_once_with_food_products_only(): void

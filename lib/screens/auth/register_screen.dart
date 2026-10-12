@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../services/api_client.dart';
 import '../../services/auth_service.dart';
 import '../../utils/colors.dart';
+import '../../widgets/auth_layout.dart';
 import '../../widgets/voom_logo.dart';
 import '../home/main_screen.dart';
 
@@ -56,32 +57,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Inscription'),
-        backgroundColor: AppColors.background,
-        foregroundColor: AppColors.textPrimary,
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
-          child: Form(
+    return AuthLayout(
+      photo: 'assets/images/photo_courier_bags.jpg',
+      photoAlignment: const Alignment(0, -0.35),
+      tagline: 'Créez votre compte\nen 1 minute',
+      heroHeight: 220,
+      showBack: true,
+      card: Form(
             key: _formKey,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: Image.asset('assets/images/photo_courier_bags.jpg',
-                      height: 150, fit: BoxFit.cover, alignment: const Alignment(0, -0.2)),
-                ),
-                const SizedBox(height: 16),
-                const Center(child: VoomLogo(width: 160)),
+                const Center(child: VoomLogo(width: 140)),
+                const SizedBox(height: 10),
+                Text('Créer un compte client',
+                    textAlign: TextAlign.center, style: Theme.of(context).textTheme.headlineSmall),
+                const SizedBox(height: 4),
+                Text('Demandez vos livraisons en quelques secondes.',
+                    textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium),
                 const SizedBox(height: 20),
-                Text('Créer un compte client', style: Theme.of(context).textTheme.headlineMedium),
-                const SizedBox(height: 8),
-                Text('Demandez vos livraisons en quelques secondes.', style: Theme.of(context).textTheme.bodyMedium),
-                const SizedBox(height: 24),
                 TextFormField(
                   controller: _nameController,
                   textCapitalization: TextCapitalization.words,
@@ -162,15 +156,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     Text('Déjà un compte ? ', style: Theme.of(context).textTheme.bodyMedium),
                     TextButton(
                       onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Se connecter', style: TextStyle(fontWeight: FontWeight.w700)),
+                      child: const Text('Se connecter'),
                     ),
                   ],
                 ),
               ],
             ),
           ),
-        ),
-      ),
     );
   }
 }

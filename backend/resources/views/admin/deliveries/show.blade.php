@@ -104,15 +104,14 @@
                             </a>
                         @else
                             <div class="rounded border bg-gray-50 p-4 text-sm text-gray-600 flex flex-col justify-center">
-                                <span class="font-semibold text-gray-800">Paiement en ligne</span>
-                                via {{ $payment->gateway === 'kkiapay' ? 'KKiaPay' : ($payment->gateway === 'paygate' ? 'PayGate Global' : $payment->gateway) }}
-                                <span class="text-xs mt-1">Vérifié automatiquement auprès de l'agrégateur.</span>
+                                <span class="font-semibold text-gray-800">Validé par l'agence</span>
+                                <span class="text-xs mt-1">Espèces ou virement vérifié directement sur le compte marchand.</span>
                             </div>
                         @endif
                         <div class="md:col-span-2 text-sm space-y-1">
                             <div><span class="px-2 py-0.5 rounded-full text-xs {{ $payment->status->badgeClass() }}">{{ $payment->status->label() }}</span></div>
                             <div><span class="text-gray-500">Moyen :</span> {{ $payment->method->label() }}</div>
-                            <div><span class="text-gray-500">Réf. transaction :</span> <span class="font-mono">{{ $payment->transaction_ref ?? $payment->gateway_reference ?? '—' }}</span></div>
+                            <div><span class="text-gray-500">Réf. transaction :</span> <span class="font-mono">{{ $payment->transaction_ref ?? '—' }}</span></div>
                             <div><span class="text-gray-500">N° payeur :</span> {{ $payment->payer_phone }}</div>
                             <div><span class="text-gray-500">Montant attendu :</span> {{ $money($payment->amount) }}</div>
                             <div><span class="text-gray-500">Envoyée le :</span> {{ $payment->created_at->format('d/m/Y H:i') }}</div>

@@ -118,7 +118,7 @@ class DeliveryMap extends StatelessWidget {
               bottom: 8,
               child: FilledButton.tonalIcon(
                 style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.background,
+                  backgroundColor: AppColors.card,
                   foregroundColor: AppColors.textPrimary,
                   elevation: 2,
                   visualDensity: VisualDensity.compact,

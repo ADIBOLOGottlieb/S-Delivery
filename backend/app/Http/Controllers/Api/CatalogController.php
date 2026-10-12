@@ -10,7 +10,6 @@ use App\Models\Product;
 use App\Models\Promotion;
 use App\Models\Setting;
 use App\Models\Subcategory;
-use App\Services\Payments\PaymentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -59,27 +58,18 @@ class CatalogController extends Controller
         return PromotionResource::collection(Promotion::visible()->with('product.packItems')->latest()->limit(10)->get());
     }
 
-    /**
-     * Mode de paiement proposé à l'app :
-     * - gateway : paiement automatique via l'agrégateur (Flooz et Mixx toujours proposés) ;
-     * - manual  : virement sur les numéros marchands + capture d'écran.
-     */
-    public function paymentInfo(PaymentService $payments): JsonResponse
+    /** Numéros marchands Flooz / Mixx by Yas : le client vire puis envoie la capture d'écran. */
+    public function paymentInfo(): JsonResponse
     {
-        $gateway = $payments->gateway();
-
         $methods = [];
         foreach (PaymentMethod::cases() as $method) {
             $number = Setting::get("{$method->value}_merchant_number");
-            if ($gateway || $number) {
-                $methods[] = ['method' => $method->value, 'label' => $method->label(), 'merchant_number' => $number ?: null];
+            if ($number) {
+                $methods[] = ['method' => $method->value, 'label' => $method->label(), 'merchant_number' => $number];
             }
         }
 
         return response()->json([
-            'mode' => $gateway ? 'gateway' : 'manual',
-            'gateway' => $gateway?->name(),
-            'fee_note' => $gateway?->name() === 'kkiapay' ? config('payments.kkiapay.fee_label') : null,
             'merchant_name' => Setting::get('merchant_name'),
             'instructions' => Setting::get('payment_instructions'),
             'methods' => $methods,

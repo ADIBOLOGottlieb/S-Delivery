@@ -66,7 +66,9 @@ class PlisColisScreenState extends State<PlisColisScreen> {
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
               child: Container(
                 height: 44,
-                decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(22)),
+                // Pilule noire sur le fond crème, onglet actif en jaune.
+                decoration: BoxDecoration(color: AppColors.secondary, borderRadius: BorderRadius.circular(22)),
+                padding: const EdgeInsets.all(3),
                 child: TabBar(
                   indicatorSize: TabBarIndicatorSize.tab,
                   dividerColor: Colors.transparent,

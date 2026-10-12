@@ -9,42 +9,12 @@
         @csrf @method('PUT')
 
         <section class="bg-white rounded-lg shadow-sm p-6 space-y-4">
-            <h2 class="font-semibold">Paiement mobile money</h2>
-
-            <div>
-                <label class="block text-sm font-medium mb-1" for="payment_mode">Mode de paiement</label>
-                <select id="payment_mode" name="payment_mode" class="w-full border rounded px-3 py-2">
-                    <option value="auto" @selected(old('payment_mode', $gateway['mode']) === 'auto')>
-                        Automatique — agrégateur{{ $gateway['configured'] ? ' ('.$gateway['configured'].')' : ' (clés non configurées → manuel)' }}
-                    </option>
-                    <option value="manual" @selected(old('payment_mode', $gateway['mode']) === 'manual')>Manuel — capture d'écran vérifiée par l'admin</option>
-                    <option value="simulation" @selected(old('payment_mode', $gateway['mode']) === 'simulation')>Simulation — tests, aucun argent débité</option>
-                </select>
-                <p class="text-xs text-gray-500 mt-1">Dans tous les modes, vous pouvez aussi valider un paiement depuis la fiche d'une livraison.</p>
-            </div>
-
-            <div class="rounded border p-4 text-sm {{ $gateway['active'] === 'simulation' ? 'bg-orange-50 border-orange-300' : ($gateway['active'] ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200') }}">
-                @if ($gateway['active'] === 'simulation')
-                    <p class="font-semibold text-orange-800">⚠ Mode simulation actif : les clients peuvent « payer » sans argent réel.</p>
-                    <p class="text-gray-600 mt-1">À utiliser uniquement pour les tests. Repassez en mode Automatique ou Manuel avant l'ouverture au public.</p>
-                @elseif ($gateway['active'])
-                    <p class="font-semibold text-green-800">
-                        Paiement en ligne actif : {{ $gateway['active'] === 'kkiapay' ? 'KKiaPay' : 'PayGate Global' }}
-                        @if ($gateway['active'] === 'kkiapay' && $gateway['sandbox']) <span class="text-orange-700">(mode test / sandbox)</span> @endif
-                    </p>
-                    <p class="text-gray-600 mt-1">Les clients paient Flooz ou Mixx by Yas dans l'app ; le paiement est confirmé automatiquement.</p>
-                @else
-                    <p class="font-semibold text-gray-800">Mode manuel : virement sur les numéros ci-dessous + capture d'écran à vérifier.</p>
-                    <p class="text-gray-600 mt-1">Renseignez au moins un numéro marchand, sinon le client ne peut pas payer dans l'app.</p>
-                    @if ($gateway['mode'] === 'auto' && $gateway['requested'] !== 'manual')
-                        <p class="text-gray-600 mt-1">« {{ $gateway['requested'] }} » est demandé mais ses clés sont absentes des variables d'environnement.</p>
-                    @endif
-                @endif
-                <p class="text-gray-500 mt-2">Agrégateur et clés : variables <code>PAYMENT_GATEWAY</code>, <code>KKIAPAY_*</code> / <code>PAYGATE_AUTH_TOKEN</code> (voir le README).</p>
-                <p class="text-gray-500">URL de notification à déclarer : KKiaPay <code class="break-all">{{ $gateway['webhook_kkiapay'] }}</code> · PayGate <code class="break-all">{{ $gateway['webhook_paygate'] }}</code></p>
-            </div>
-
-            <p class="text-sm text-gray-500">Numéros marchands (mode manuel) : affichés aux clients uniquement si le paiement en ligne est désactivé.</p>
+            <h2 class="font-semibold">Paiement Flooz / Mixx by Yas</h2>
+            <p class="text-sm text-gray-500">
+                Le client vire le montant sur un de ces numéros puis envoie la capture d'écran dans l'app.
+                Vous vérifiez la transaction sur le compte marchand et confirmez depuis la fiche de la livraison
+                (ou validez directement un paiement en espèces). Renseignez au moins un numéro.
+            </p>
             <div>
                 <label class="block text-sm font-medium mb-1">Nom du compte marchand</label>
                 <input name="merchant_name" value="{{ old('merchant_name', $settings['merchant_name']) }}" required class="w-full border rounded px-3 py-2">

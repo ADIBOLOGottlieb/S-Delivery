@@ -159,7 +159,7 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
     );
 
     return Scaffold(
-      appBar: AppBar(title: Text(cat.label), backgroundColor: cat.color, foregroundColor: cat.onColor),
+      appBar: AppBar(title: Text(cat.label)),
       body: Column(
         children: [
           Padding(
@@ -220,7 +220,7 @@ class _VerticalTabs extends StatelessWidget {
               duration: const Duration(milliseconds: 200),
               padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
               decoration: BoxDecoration(
-                color: active ? AppColors.background : Colors.transparent,
+                color: active ? AppColors.card : Colors.transparent,
                 border: Border(left: BorderSide(color: active ? color : Colors.transparent, width: 4)),
               ),
               child: Column(
@@ -365,10 +365,11 @@ class _ProductCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.background,
-      borderRadius: BorderRadius.circular(16),
-      elevation: 1.5,
-      shadowColor: Colors.black26,
+      color: AppColors.card,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: const BorderSide(color: AppColors.border),
+      ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
@@ -402,7 +403,8 @@ class _ProductCard extends StatelessWidget {
                         child: Text.rich(
                           TextSpan(children: [
                             TextSpan(
-                              text: formatFcfa(product.price),
+                              // Format court sur les petites cartes : « 2 000 F ».
+                              text: formatFcfa(product.price).replaceAll('FCFA', 'F'),
                               style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.textPrimary),
                             ),
                             if (product.unit != null)

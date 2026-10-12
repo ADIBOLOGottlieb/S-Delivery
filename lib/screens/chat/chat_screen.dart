@@ -118,7 +118,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     final r = _request;
     return Scaffold(
-      backgroundColor: const Color(0xFFF4EFE6),
+      backgroundColor: AppColors.surface,
       appBar: AppBar(
         titleSpacing: 0,
         title: Row(
@@ -135,7 +135,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 children: [
                   const Text('Agence VOOM', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                   if (r != null)
-                    Text('${r.reference} · ${r.statusLabel}', style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                    Text('${r.reference} · ${r.statusLabel}', style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                 ],
               ),
             ),
@@ -220,7 +220,7 @@ class _ParcelSummary extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      color: Colors.white,
+      color: AppColors.card,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Wrap(
         spacing: 16,
@@ -299,7 +299,7 @@ class _Bubble extends StatelessWidget {
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 24),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.85), borderRadius: BorderRadius.circular(12)),
+          decoration: BoxDecoration(color: AppColors.card.withValues(alpha: 0.9), borderRadius: BorderRadius.circular(12)),
           child: Text(m.body ?? '', textAlign: TextAlign.center, style: const TextStyle(fontSize: 12.5)),
         ),
       );
@@ -316,7 +316,7 @@ class _Bubble extends StatelessWidget {
           margin: const EdgeInsets.symmetric(vertical: 3),
           padding: EdgeInsets.all(hasPhoto ? 4 : 10),
           decoration: BoxDecoration(
-            color: mine ? AppColors.primary : Colors.white,
+            color: mine ? AppColors.primary : AppColors.card,
             borderRadius: BorderRadius.only(
               topLeft: const Radius.circular(18),
               topRight: const Radius.circular(18),
@@ -398,7 +398,7 @@ class _Composer extends StatelessWidget {
           children: [
             Expanded(
               child: Container(
-                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(28)),
+                decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(28)),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [

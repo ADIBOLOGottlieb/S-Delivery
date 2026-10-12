@@ -99,7 +99,7 @@ class HomeScreenState extends State<HomeScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Bonjour ${user?.firstName ?? ''} 👋', style: textTheme.bodyLarge),
+                              Text('Bonjour ${user?.firstName ?? ''},', style: textTheme.bodyLarge),
                               Text(
                                 'Que livrons-nous ?',
                                 style: textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800),
@@ -268,7 +268,7 @@ class _QuickOrderCard extends StatelessWidget {
                     ),
                     SizedBox(height: 2),
                     Text(
-                      'Formulaire A → B ou programmation par photo',
+                      'Formulaire ou programmation par photo',
                       style: TextStyle(color: Colors.white70, fontSize: 12.5),
                     ),
                   ],

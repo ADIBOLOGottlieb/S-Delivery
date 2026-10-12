@@ -1,11 +1,9 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/delivery.dart';
 import '../../models/product.dart';
@@ -16,10 +14,8 @@ import '../../utils/colors.dart';
 import '../../utils/formatters.dart';
 import '../../widgets/bottom_action_bar.dart';
 
-/// Paiement d'une livraison par Flooz ou Mixx by Yas.
-///
-/// - Mode « agrégateur » (KKiaPay / PayGate) : paiement en ligne confirmé automatiquement.
-/// - Mode « manuel » (secours) : virement au numéro marchand + capture d'écran vérifiée par l'agence.
+/// Paiement d'une livraison par Flooz ou Mixx by Yas : virement au numéro marchand
+/// de l'agence, puis capture d'écran de la transaction, vérifiée par l'agence.
 class PaymentScreen extends StatefulWidget {
   final Delivery delivery;
 
@@ -29,132 +25,32 @@ class PaymentScreen extends StatefulWidget {
   State<PaymentScreen> createState() => _PaymentScreenState();
 }
 
-class _PaymentScreenState extends State<PaymentScreen> with WidgetsBindingObserver {
-  static const _pollEvery = Duration(seconds: 4);
-  static const _pollFor = Duration(minutes: 5);
-
+class _PaymentScreenState extends State<PaymentScreen> {
   final _formKey = GlobalKey<FormState>();
   final _refController = TextEditingController();
   late final _phoneController = TextEditingController(text: context.read<AuthService>().user?.phoneNumber);
 
-  late final Future<PaymentInfo> _info;
-  PaymentInfo? _loaded;
+  late final Future<PaymentInfo> _info = context.read<DeliveryService>().paymentInfo();
   String? _method;
   XFile? _screenshot;
   bool _sending = false;
 
-  // Paiement en ligne en attente de confirmation.
-  CheckoutStart? _pending;
-  Timer? _poller;
-  DateTime? _pollStarted;
-  bool _checking = false;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    _info = context.read<DeliveryService>().paymentInfo();
-    _info.then((info) {
-      if (mounted) setState(() => _loaded = info);
-    }, onError: (_) {});
-  }
-
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _poller?.cancel();
     _refController.dispose();
     _phoneController.dispose();
     super.dispose();
   }
 
-  /// Retour dans l'app après la page de paiement : vérification immédiate.
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && _pending != null) _poll();
-  }
-
   void _error(String msg) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: AppColors.error));
-
-  // --- Mode agrégateur ------------------------------------------------------
-
-  Future<void> _startGateway() async {
-    if (_method == null) return _error('Choisissez Flooz ou Mixx by Yas.');
-    if (!_formKey.currentState!.validate()) return;
-
-    setState(() => _sending = true);
-    try {
-      final start = await context.read<DeliveryService>().checkout(
-            deliveryId: widget.delivery.id,
-            method: _method!,
-            phone: _phoneController.text.trim(),
-          );
-      if (!mounted) return;
-      setState(() => _pending = start);
-      _pollStarted = DateTime.now();
-      _poller = Timer.periodic(_pollEvery, (_) => _poll());
-      if (start.redirectUrl != null) await _openPaymentPage();
-    } on ApiException catch (e) {
-      _error(e.message);
-    } finally {
-      if (mounted) setState(() => _sending = false);
-    }
-  }
-
-  Future<void> _openPaymentPage() async {
-    final url = _pending?.redirectUrl;
-    if (url == null) return;
-    final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-    if (!ok && mounted) _error("Impossible d'ouvrir la page de paiement.");
-  }
-
-  Future<void> _poll() async {
-    final pending = _pending;
-    if (pending == null || _checking) return;
-    if (_pollStarted != null && DateTime.now().difference(_pollStarted!) > _pollFor) {
-      _stopWaiting();
-      return _error('Pas de confirmation reçue. Si vous avez payé, la livraison sera mise à jour automatiquement.');
-    }
-
-    _checking = true;
-    try {
-      final (status, delivery) = await context.read<DeliveryService>().paymentStatus(
-            deliveryId: widget.delivery.id,
-            paymentId: pending.paymentId,
-          );
-      if (!mounted) return;
-      if (status == PaymentStatus.verified) {
-        _poller?.cancel();
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Paiement confirmé ! Un livreur va être assigné.'),
-          backgroundColor: AppColors.success,
-        ));
-        Navigator.of(context).pop(delivery);
-      } else if (status == 'failed') {
-        _stopWaiting();
-        _error("Le paiement n'a pas abouti. Vous pouvez réessayer.");
-      }
-    } on ApiException {
-      // Erreur réseau passagère : nouvelle tentative au prochain tour.
-    } finally {
-      _checking = false;
-    }
-  }
-
-  void _stopWaiting() {
-    _poller?.cancel();
-    if (mounted) setState(() => _pending = null);
-  }
-
-  // --- Mode manuel ----------------------------------------------------------
 
   Future<void> _pickScreenshot() async {
     final file = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1600, imageQuality: 85);
     if (file != null) setState(() => _screenshot = file);
   }
 
-  Future<void> _submitManual() async {
+  Future<void> _submit() async {
     if (_method == null) return _error('Choisissez Flooz ou Mixx by Yas.');
     if (!_formKey.currentState!.validate()) return;
     if (_screenshot == null) return _error("Ajoutez la capture d'écran de la transaction.");
@@ -182,203 +78,70 @@ class _PaymentScreenState extends State<PaymentScreen> with WidgetsBindingObserv
     }
   }
 
-  // --- Interface -----------------------------------------------------------
-
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: _pending == null,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _stopWaiting();
-      },
-      child: Scaffold(
-        appBar: AppBar(title: const Text('Paiement')),
-        body: FutureBuilder<PaymentInfo>(
-          future: _info,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snapshot.hasError) {
-              return Center(child: Text(snapshot.error.toString(), style: const TextStyle(color: AppColors.error)));
-            }
-            final info = snapshot.data!;
-            if (info.methods.isEmpty) {
-              return const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Text(
-                    "Le paiement mobile n'est pas encore configuré par l'agence. Contactez VOOM Delivery.",
-                    textAlign: TextAlign.center,
-                  ),
+    return Scaffold(
+      appBar: AppBar(title: const Text('Paiement')),
+      body: FutureBuilder<PaymentInfo>(
+        future: _info,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text(snapshot.error.toString(), style: const TextStyle(color: AppColors.error)));
+          }
+          final info = snapshot.data!;
+          if (info.methods.isEmpty) {
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  "Le paiement mobile n'est pas encore configuré par l'agence. Contactez VOOM Delivery.",
+                  textAlign: TextAlign.center,
                 ),
-              );
-            }
-            if (_pending != null) return _WaitingView(start: _pending!, onReopen: _openPaymentPage);
-            return Form(key: _formKey, child: info.isGateway ? _gatewayForm(info) : _manualForm(info));
-          },
-        ),
-        bottomNavigationBar: _bottomBar(),
+              ),
+            );
+          }
+          return Form(key: _formKey, child: _form(info));
+        },
       ),
-    );
-  }
-
-  Widget? _bottomBar() {
-    final info = _loaded;
-    if (info == null || _method == null) return null;
-    final amount = widget.delivery.totalAmount;
-
-    if (_pending != null) {
-      return BottomActionBar(children: [
-        OutlinedButton(onPressed: _stopWaiting, child: const Text('Annuler / changer de moyen de paiement')),
-      ]);
-    }
-
-    return BottomActionBar(
-      summary: Row(
+      bottomNavigationBar: BottomActionBar(
         children: [
-          Expanded(child: Text('Montant', style: Theme.of(context).textTheme.bodyMedium)),
-          Text(formatFcfa(amount), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        ],
-      ),
-      children: [
-        ElevatedButton.icon(
-          onPressed: _sending ? null : (info.isGateway ? _startGateway : _submitManual),
-          icon: _sending ? const ButtonProgress() : Icon(info.isGateway ? Icons.lock : Icons.send),
-          label: Text(info.isGateway ? 'Payer ${formatFcfa(amount)}' : 'Envoyer la preuve de paiement'),
-        ),
-      ],
-    );
-  }
-
-  Widget _amountCard() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: AppColors.secondary, borderRadius: BorderRadius.circular(16)),
-      child: Column(
-        children: [
-          const Text('Montant à payer', style: TextStyle(color: Colors.white70)),
-          const SizedBox(height: 4),
-          Text(
-            formatFcfa(widget.delivery.totalAmount),
-            style: const TextStyle(color: AppColors.primary, fontSize: 28, fontWeight: FontWeight.bold),
+          ElevatedButton.icon(
+            onPressed: _sending ? null : _submit,
+            icon: _sending ? const ButtonProgress() : const Icon(Icons.send_rounded),
+            label: const Text('Envoyer la preuve'),
           ),
-          const SizedBox(height: 4),
-          Text('Livraison ${widget.delivery.reference}', style: const TextStyle(color: Colors.white70)),
         ],
       ),
     );
   }
 
-  List<Widget> _methodChoice(PaymentInfo info, {required bool showNumbers}) => [
+  Widget _form(PaymentInfo info) {
+    final selected = info.methods.where((m) => m.method == _method).firstOrNull;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+      children: [
+        _AmountCard(amount: widget.delivery.totalAmount, reference: widget.delivery.reference),
+        const SizedBox(height: 22),
+        const _Step(number: 1, title: 'Choisissez votre moyen de paiement'),
         for (final m in info.methods)
-          if (!showNumbers || m.merchantNumber != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _MethodTile(
-                method: m,
-                showNumber: showNumbers,
-                selected: _method == m.method,
-                onTap: () => setState(() => _method = m.method),
-              ),
-            ),
-      ];
-
-  Widget _phoneField(String label) => TextFormField(
-        controller: _phoneController,
-        keyboardType: TextInputType.phone,
-        decoration: InputDecoration(labelText: label, prefixIcon: const Icon(Icons.phone_android)),
-        validator: (v) => (v ?? '').replaceAll(RegExp(r'\D'), '').length < 8 ? 'Numéro invalide' : null,
-      );
-
-  Widget _gatewayForm(PaymentInfo info) {
-    final titles = Theme.of(context).textTheme.titleMedium;
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        if (info.gateway == 'simulation')
-          Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.warning.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Text(
-              'MODE TEST : paiement simulé, aucun argent ne sera débité.',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: _MethodTile(method: m, selected: _method == m.method, onTap: () => setState(() => _method = m.method)),
           ),
-        _amountCard(),
-        const SizedBox(height: 20),
-        Text('1. Choisissez votre moyen de paiement', style: titles),
-        const SizedBox(height: 8),
-        ..._methodChoice(info, showNumbers: false),
-        const SizedBox(height: 16),
-        Text('2. Numéro qui va payer', style: titles),
-        const SizedBox(height: 8),
-        _phoneField(_method == 'mixx' ? 'Numéro Mixx by Yas' : 'Numéro Flooz'),
-        const SizedBox(height: 16),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Icon(Icons.verified_user, color: AppColors.success, size: 20),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                [
-                  'Paiement sécurisé : vous validez avec votre code secret, la confirmation est automatique.',
-                  if (info.feeNote != null) 'Frais : ${info.feeNote}.',
-                ].join(' '),
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _manualForm(PaymentInfo info) {
-    final number = info.methods.where((m) => m.method == _method).firstOrNull?.merchantNumber;
-    final titles = Theme.of(context).textTheme.titleMedium;
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _amountCard(),
-        const SizedBox(height: 20),
-        Text('1. Choisissez votre moyen de paiement', style: titles),
-        const SizedBox(height: 8),
-        ..._methodChoice(info, showNumbers: true),
-        if (number != null) ...[
-          const SizedBox(height: 16),
-          Text('2. Envoyez le montant au compte marchand', style: titles),
-          const SizedBox(height: 8),
-          Card(
-            child: ListTile(
-              title: Text(info.merchantName),
-              subtitle: Text(
-                number,
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-              ),
-              trailing: IconButton(
-                tooltip: 'Copier le numéro',
-                icon: const Icon(Icons.copy),
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: number));
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Numéro copié')));
-                },
-              ),
-            ),
-          ),
+        if (selected != null) ...[
+          const SizedBox(height: 12),
+          const _Step(number: 2, title: 'Envoyez le montant à ce numéro'),
+          _MerchantCard(name: info.merchantName, number: selected.merchantNumber),
           if (info.instructions != null)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+              padding: const EdgeInsets.only(top: 10),
               child: Text(info.instructions!, style: Theme.of(context).textTheme.bodyMedium),
             ),
-          const SizedBox(height: 16),
-          Text('3. Envoyez la preuve de paiement', style: titles),
-          const SizedBox(height: 12),
+          const SizedBox(height: 22),
+          const _Step(number: 3, title: 'Envoyez la preuve de paiement'),
           TextFormField(
             controller: _refController,
             decoration: const InputDecoration(
@@ -389,109 +152,222 @@ class _PaymentScreenState extends State<PaymentScreen> with WidgetsBindingObserv
             validator: (v) => (v == null || v.trim().isEmpty) ? 'Référence requise' : null,
           ),
           const SizedBox(height: 12),
-          _phoneField('Numéro ayant effectué le paiement'),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: _pickScreenshot,
-            icon: const Icon(Icons.image_outlined),
-            label: Text(_screenshot == null ? "Ajouter la capture d'écran" : 'Changer la capture'),
-          ),
-          if (_screenshot != null) ...[
-            const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.file(File(_screenshot!.path), height: 260, fit: BoxFit.contain),
+          TextFormField(
+            controller: _phoneController,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(
+              labelText: 'Numéro ayant effectué le paiement',
+              prefixIcon: Icon(Icons.phone_android),
             ),
-          ],
-          const SizedBox(height: 16),
+            validator: (v) => (v ?? '').replaceAll(RegExp(r'\D'), '').length < 8 ? 'Numéro invalide' : null,
+          ),
+          const SizedBox(height: 12),
+          _ScreenshotPicker(file: _screenshot, onTap: _pickScreenshot),
         ],
       ],
     );
   }
 }
 
-/// Attente de la confirmation du paiement en ligne.
-class _WaitingView extends StatelessWidget {
-  final CheckoutStart start;
-  final VoidCallback onReopen;
+/// Montant à payer, en bloc noir et jaune bien visible.
+class _AmountCard extends StatelessWidget {
+  final int amount;
+  final String reference;
 
-  const _WaitingView({required this.start, required this.onReopen});
+  const _AmountCard({required this.amount, required this.reference});
 
   @override
   Widget build(BuildContext context) {
-    final isUssd = start.mode == 'ussd';
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(isUssd ? Icons.phonelink_ring : Icons.open_in_browser, size: 72, color: AppColors.primaryDark),
-            const SizedBox(height: 20),
-            Text(
-              isUssd ? 'Validez sur votre téléphone' : 'Finalisez le paiement',
-              style: Theme.of(context).textTheme.headlineSmall,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 12),
-            Text(start.message, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyLarge),
-            const SizedBox(height: 28),
-            const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: AppColors.secondary,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 16, offset: Offset(0, 8))],
+      ),
+      child: Row(
+        children: [
+          const CircleAvatar(
+            radius: 26,
+            backgroundColor: AppColors.primary,
+            child: Icon(Icons.payments_rounded, color: AppColors.onPrimary, size: 28),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
-                SizedBox(width: 12),
-                Text('En attente de confirmation…'),
+                const Text('Montant à payer', style: TextStyle(color: Colors.white70)),
+                Text(
+                  formatFcfa(amount),
+                  style: const TextStyle(color: AppColors.primary, fontSize: 28, fontWeight: FontWeight.w800),
+                ),
+                Text('Livraison $reference', style: const TextStyle(color: Colors.white60, fontSize: 12.5)),
               ],
             ),
-            if (!isUssd) ...[
-              const SizedBox(height: 24),
-              TextButton.icon(
-                onPressed: onReopen,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Rouvrir la page de paiement'),
-              ),
-            ],
-          ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Titre d'étape numérotée (1, 2, 3).
+class _Step extends StatelessWidget {
+  final int number;
+  final String title;
+
+  const _Step({required this.number, required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 13,
+            backgroundColor: AppColors.primary,
+            child: Text('$number',
+                style: const TextStyle(color: AppColors.onPrimary, fontWeight: FontWeight.w800, fontSize: 13)),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: Text(title, style: Theme.of(context).textTheme.titleMedium)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Numéro marchand en grand, avec copie en un appui.
+class _MerchantCard extends StatelessWidget {
+  final String name;
+  final String number;
+
+  const _MerchantCard({required this.name, required this.number});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 14, 8, 14),
+      decoration: BoxDecoration(
+        color: AppColors.primarySoft,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.primaryDark),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(name, style: Theme.of(context).textTheme.bodyMedium),
+                Text(number, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: 1)),
+              ],
+            ),
+          ),
+          IconButton.filled(
+            tooltip: 'Copier le numéro',
+            style: IconButton.styleFrom(backgroundColor: AppColors.secondary, foregroundColor: AppColors.primary),
+            icon: const Icon(Icons.copy_rounded),
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: number));
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Numéro copié')));
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Zone d'ajout de la capture d'écran, avec aperçu.
+class _ScreenshotPicker extends StatelessWidget {
+  final XFile? file;
+  final VoidCallback onTap;
+
+  const _ScreenshotPicker({required this.file, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.card,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: file == null ? AppColors.primaryDark : AppColors.success, width: 1.5),
+          ),
+          child: file == null
+              ? const Column(
+                  children: [
+                    SizedBox(height: 8),
+                    Icon(Icons.add_photo_alternate_outlined, size: 40, color: AppColors.textSecondary),
+                    SizedBox(height: 6),
+                    Text("Ajouter la capture d'écran", style: TextStyle(fontWeight: FontWeight.w700)),
+                    SizedBox(height: 8),
+                  ],
+                )
+              : Column(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.file(File(file!.path), height: 240, fit: BoxFit.contain),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text('Changer la capture', style: TextStyle(fontWeight: FontWeight.w700)),
+                  ],
+                ),
         ),
       ),
     );
   }
 }
 
-/// Moyen de paiement sélectionnable, libellé complet sur toute la largeur.
+/// Moyen de paiement sélectionnable.
 class _MethodTile extends StatelessWidget {
   final PaymentMethodInfo method;
   final bool selected;
-  final bool showNumber;
   final VoidCallback onTap;
 
-  const _MethodTile({required this.method, required this.selected, required this.showNumber, required this.onTap});
+  const _MethodTile({required this.method, required this.selected, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: selected ? AppColors.primary.withValues(alpha: 0.25) : AppColors.background,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: selected ? AppColors.secondary : AppColors.textHint, width: selected ? 2 : 1),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(
-            children: [
-              Icon(
-                selected ? Icons.radio_button_checked : Icons.radio_button_off,
-                color: selected ? AppColors.secondary : AppColors.textHint,
-              ),
-              const SizedBox(width: 12),
-              Expanded(child: Text(method.label, style: Theme.of(context).textTheme.titleMedium)),
-              if (showNumber && method.merchantNumber != null)
-                Text(method.merchantNumber!, style: Theme.of(context).textTheme.bodyMedium),
-            ],
+    final mixx = method.method == 'mixx';
+    return Semantics(
+      selected: selected,
+      button: true,
+      child: Material(
+        color: selected ? AppColors.primarySoft : AppColors.card,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(color: selected ? AppColors.secondary : AppColors.border, width: selected ? 2 : 1),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(18),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: mixx ? const Color(0xFFFFD400) : const Color(0xFF0066B3),
+                  child: Icon(Icons.phone_iphone, color: mixx ? AppColors.onPrimary : Colors.white, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: Text(method.label, style: Theme.of(context).textTheme.titleMedium)),
+                Icon(
+                  selected ? Icons.check_circle_rounded : Icons.radio_button_off,
+                  color: selected ? AppColors.secondary : AppColors.textHint,
+                ),
+              ],
+            ),
           ),
         ),
       ),

@@ -89,30 +89,18 @@ void main() {
     expect(unauthorized, isTrue);
   });
 
-  test('PaymentInfo et CheckoutStart lisent le mode agrégateur', () {
+  test('PaymentInfo lit les numéros marchands Flooz / Mixx', () {
     final info = PaymentInfo.fromJson({
-      'mode': 'gateway',
-      'gateway': 'kkiapay',
-      'fee_note': '1,9 % de frais de service à la charge du payeur',
       'merchant_name': 'VOOM Delivery',
-      'instructions': null,
+      'instructions': 'Indiquez la référence de la livraison.',
       'methods': [
-        {'method': 'flooz', 'label': 'Flooz (Moov Africa)', 'merchant_number': null},
-        {'method': 'mixx', 'label': 'Mixx by Yas', 'merchant_number': null},
+        {'method': 'flooz', 'label': 'Flooz (Moov Africa)', 'merchant_number': '99 00 00 00'},
+        {'method': 'mixx', 'label': 'Mixx by Yas', 'merchant_number': '70 00 00 00'},
       ],
     });
-    expect(info.isGateway, isTrue);
+    expect(info.merchantName, 'VOOM Delivery');
     expect(info.methods.map((m) => m.method), ['flooz', 'mixx']);
-    expect(info.methods.first.merchantNumber, isNull);
-
-    final start = CheckoutStart.fromJson({
-      'payment': {'id': 7},
-      'mode': 'redirect',
-      'message': 'Finalisez le paiement',
-      'redirect_url': 'https://voom-delivery-api.onrender.com/paiement/abc',
-    });
-    expect(start.paymentId, 7);
-    expect(start.redirectUrl, contains('/paiement/'));
+    expect(info.methods.first.merchantNumber, '99 00 00 00');
   });
 
   test('Delivery.fromJson lit les points A/B et le livreur', () {

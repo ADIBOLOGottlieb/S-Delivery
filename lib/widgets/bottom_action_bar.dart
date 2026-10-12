@@ -15,10 +15,12 @@ class BottomActionBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
+      // Panneau ivoire arrondi qui se détache du fond crème.
       decoration: BoxDecoration(
-        color: AppColors.background,
+        color: AppColors.card,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 12, offset: const Offset(0, -2)),
+          BoxShadow(color: AppColors.primaryDark.withValues(alpha: 0.18), blurRadius: 18, offset: const Offset(0, -4)),
         ],
       ),
       child: SafeArea(

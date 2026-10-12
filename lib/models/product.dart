@@ -93,67 +93,32 @@ class Promotion {
       );
 }
 
+/// Moyen de paiement proposé par l'agence, avec son numéro marchand.
 class PaymentMethodInfo {
   final String method;
   final String label;
+  final String merchantNumber;
 
-  /// Numéro marchand (mode manuel uniquement).
-  final String? merchantNumber;
-
-  const PaymentMethodInfo({required this.method, required this.label, this.merchantNumber});
+  const PaymentMethodInfo({required this.method, required this.label, required this.merchantNumber});
 
   factory PaymentMethodInfo.fromJson(Map<String, dynamic> json) => PaymentMethodInfo(
         method: json['method'] as String,
         label: json['label'] as String,
-        merchantNumber: json['merchant_number'] as String?,
+        merchantNumber: json['merchant_number'] as String,
       );
 }
 
+/// Paiement Flooz / Mixx by Yas : virement au numéro marchand + capture d'écran vérifiée par l'agence.
 class PaymentInfo {
-  /// `gateway` : paiement automatique via l'agrégateur ; `manual` : capture d'écran vérifiée par l'agence.
-  final String mode;
-  final String? gateway;
-  final String? feeNote;
   final String merchantName;
   final String? instructions;
   final List<PaymentMethodInfo> methods;
 
-  const PaymentInfo({
-    this.mode = 'manual',
-    this.gateway,
-    this.feeNote,
-    required this.merchantName,
-    this.instructions,
-    required this.methods,
-  });
-
-  bool get isGateway => mode == 'gateway';
+  const PaymentInfo({required this.merchantName, this.instructions, required this.methods});
 
   factory PaymentInfo.fromJson(Map<String, dynamic> json) => PaymentInfo(
-        mode: json['mode'] as String? ?? 'manual',
-        gateway: json['gateway'] as String?,
-        feeNote: json['fee_note'] as String?,
         merchantName: json['merchant_name'] as String? ?? 'VOOM Delivery',
         instructions: json['instructions'] as String?,
         methods: (json['methods'] as List).map((m) => PaymentMethodInfo.fromJson(m as Map<String, dynamic>)).toList(),
-      );
-}
-
-/// Réponse de POST /deliveries/{id}/checkout.
-class CheckoutStart {
-  final int paymentId;
-
-  /// `ussd` : validation sur le téléphone (PayGate) ; `redirect` : page de paiement à ouvrir (KKiaPay).
-  final String mode;
-  final String message;
-  final String? redirectUrl;
-
-  const CheckoutStart({required this.paymentId, required this.mode, required this.message, this.redirectUrl});
-
-  factory CheckoutStart.fromJson(Map<String, dynamic> json) => CheckoutStart(
-        paymentId: (json['payment'] as Map<String, dynamic>)['id'] as int,
-        mode: json['mode'] as String,
-        message: json['message'] as String,
-        redirectUrl: json['redirect_url'] as String?,
       );
 }

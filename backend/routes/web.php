@@ -8,7 +8,6 @@ use App\Http\Controllers\Admin\RequestController;
 use App\Http\Controllers\Admin\SubcategoryController;
 use App\Http\Controllers\Admin\SettingController;
 use App\Http\Controllers\Admin\UserController;
-use App\Http\Controllers\CheckoutPageController;
 use App\Http\Controllers\MediaController;
 use Illuminate\Support\Facades\Route;
 
@@ -17,12 +16,6 @@ Route::redirect('/', '/admin');
 // Images envoyées depuis l'app (profil, articles, chat), stockées en base.
 Route::get('/media/{uuid}', [MediaController::class, 'show'])->whereUuid('uuid')->name('media.show');
 
-// Page de paiement KKiaPay ouverte depuis l'app (le jeton UUID du paiement sert de lien à usage unique).
-Route::middleware('throttle:30,1')->group(function () {
-    Route::get('/paiement/{token}', [CheckoutPageController::class, 'show'])->whereUuid('token')->name('checkout.show');
-    Route::get('/paiement/{token}/retour', [CheckoutPageController::class, 'return'])->whereUuid('token')->name('checkout.return');
-    Route::post('/paiement/{token}/simulation', [CheckoutPageController::class, 'simulate'])->whereUuid('token')->name('checkout.simulate');
-});
 
 Route::prefix('admin')->name('admin.')->group(function () {
     Route::middleware('guest')->group(function () {
