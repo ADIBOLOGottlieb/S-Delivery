@@ -71,7 +71,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                 const VoomLogo.stacked(width: 260),
                 const SizedBox(height: 24),
                 Text(
-                  'Livraison • Shopping • Agroalimentaire',
+                  'Plis & Colis • Courses alimentaires',
                   style: textTheme.bodyMedium?.copyWith(color: AppColors.secondary),
                 ),
               ],

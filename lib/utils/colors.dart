@@ -7,6 +7,7 @@ class AppColors {
   static const Color secondary = Color(0xFF000000); // Noir
   static const Color background = Color(0xFFFFFFFF); // Blanc
   static const Color surface = Color(0xFFF5F5F5); // Gris très clair
+  static const Color cream = Color(0xFFFFF6DE); // Fond chaud de l'accueil (jaune très pâle)
   static const Color onPrimary = Color(0xFF000000); // Noir sur jaune
   static const Color onSecondary = Color(0xFFFFFFFF); // Blanc sur noir
   static const Color onBackground = Color(0xFF000000); // Noir sur blanc

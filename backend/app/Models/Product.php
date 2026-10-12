@@ -20,7 +20,7 @@ class Product extends Model
 
     public const CATEGORIES = [
         'shopping' => 'Shopping',
-        'agro' => 'Agroalimentaire',
+        'agro' => 'Courses alimentaires',
     ];
 
     protected $attributes = ['type' => 'product'];

@@ -15,7 +15,7 @@ import 'new_delivery_screen.dart';
 
 enum ProductCategory {
   shopping('shopping', 'Shopping', AppColors.primary, AppColors.onPrimary, Icons.shopping_bag),
-  agro('agro', 'Agroalimentaire', AppColors.success, AppColors.background, Icons.agriculture);
+  agro('agro', 'Courses alimentaires', AppColors.success, AppColors.background, Icons.shopping_basket);
 
   const ProductCategory(this.value, this.label, this.color, this.onColor, this.icon);
   final String value;
@@ -91,10 +91,11 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
       final (subs, hasPacks) = await context.read<DeliveryService>().subcategories(widget.category.value);
       if (!mounted) return;
       setState(() {
+        // Sous-onglets nommés par l'admin, puis « Packs » en dernier.
         _tabs = [
           const _Tab('Tout', Icons.apps),
-          if (hasPacks) const _Tab('Packs', Icons.card_giftcard, packs: true),
           for (final s in subs) _Tab(s.name, _iconFor(s.name), subcategoryId: s.id),
+          if (hasPacks) const _Tab('Packs', Icons.card_giftcard, packs: true),
         ];
       });
     } catch (_) {
@@ -131,13 +132,14 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
   /// Icône devinée à partir du nom choisi par l'admin.
   static IconData _iconFor(String name) {
     final n = name.toLowerCase();
+    if (n.contains('poisson') || n.contains('mer')) return Icons.set_meal;
+    if (n.contains('viande') || n.contains('volaille')) return Icons.kebab_dining;
+    if (n.contains('conserve')) return Icons.inventory_2;
     if (n.contains('céréal') || n.contains('grain') || n.contains('riz')) return Icons.grass;
     if (n.contains('légume')) return Icons.eco;
     if (n.contains('tubercule') || n.contains('igname')) return Icons.spa;
     if (n.contains('fruit')) return Icons.local_florist;
-    if (n.contains('œuf') || n.contains('volaille') || n.contains('poisson') || n.contains('viande')) {
-      return Icons.egg_alt;
-    }
+    if (n.contains('œuf')) return Icons.egg_alt;
     if (n.contains('huile') || n.contains('transform')) return Icons.water_drop;
     return Icons.category;
   }

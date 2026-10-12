@@ -20,6 +20,14 @@
         <a href="tel:{{ $client->phone_number }}" class="text-sm text-blue-600 underline">{{ $client->phone_number }}</a>
     </div>
 
+    @if ($request->district)
+        <div class="mb-4 flex flex-wrap gap-3 text-sm">
+            <span class="bg-white rounded-lg shadow-sm px-3 py-2">📍 Quartier : <strong>{{ $request->district }}</strong></span>
+            <span class="bg-white rounded-lg shadow-sm px-3 py-2">📞 Numéro : <a class="font-semibold underline" href="tel:{{ $request->recipient_phone }}">{{ $request->recipient_phone }}</a></span>
+            <span class="bg-white rounded-lg shadow-sm px-3 py-2">💰 Montant total du colis : <strong>{{ $money($request->parcel_amount) }}</strong></span>
+        </div>
+    @endif
+
     <div class="grid lg:grid-cols-5 gap-6">
         {{-- Discussion --}}
         <section class="lg:col-span-3 bg-white rounded-lg shadow-sm flex flex-col" style="height: 75vh">
@@ -111,7 +119,7 @@
 
                         @foreach ([
                             'pickup' => ['A · Récupération', 'text-green-700', $previous?->pickup_address, $previous?->pickup_lat, $previous?->pickup_lng],
-                            'dropoff' => ['B · Destination', 'text-red-700', null, null, null],
+                            'dropoff' => ['B · Destination', 'text-red-700', $request->district, null, null],
                         ] as $key => [$title, $color, $addr, $lat, $lng])
                             <fieldset class="border rounded-lg p-3 space-y-2">
                                 <legend class="px-1 font-semibold {{ $color }}">{{ $title }}</legend>
@@ -133,14 +141,14 @@
                                 @else
                                     <div class="grid grid-cols-2 gap-2">
                                         <input name="recipient_name" required value="{{ old('recipient_name') }}" placeholder="Destinataire" class="border rounded px-3 py-2">
-                                        <input name="recipient_phone" required value="{{ old('recipient_phone') }}" placeholder="Téléphone" class="border rounded px-3 py-2">
+                                        <input name="recipient_phone" required value="{{ old('recipient_phone', $request->recipient_phone) }}" placeholder="Téléphone" class="border rounded px-3 py-2">
                                     </div>
                                 @endif
                             </fieldset>
                         @endforeach
 
                         <textarea name="package_description" rows="2" placeholder="Contenu (ex. 2 robes, 1 sac)" class="w-full border rounded px-3 py-2">{{ old('package_description') }}</textarea>
-                        <textarea name="notes" rows="2" placeholder="Instructions pour le livreur" class="w-full border rounded px-3 py-2">{{ old('notes') }}</textarea>
+                        <textarea name="notes" rows="2" placeholder="Instructions pour le livreur" class="w-full border rounded px-3 py-2">{{ old('notes', $request->parcel_amount ? 'Montant total du colis : '.$money($request->parcel_amount) : '') }}</textarea>
                         <div class="grid grid-cols-2 gap-2">
                             <div>
                                 <label class="block text-gray-600 mb-1">Heure limite</label>

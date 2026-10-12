@@ -10,7 +10,15 @@ class ChatRequest {
   final ScheduledDelivery? delivery;
   final DateTime? lastMessageAt;
 
+  /// Éléments obligatoires de la programmation par photo.
+  final String? district;
+  final String? recipientPhone;
+  final int? parcelAmount;
+
   const ChatRequest({
+    this.district,
+    this.recipientPhone,
+    this.parcelAmount,
     required this.id,
     required this.reference,
     required this.status,
@@ -41,6 +49,9 @@ class ChatRequest {
             : null,
         lastMessageAt:
             json['last_message_at'] == null ? null : DateTime.parse(json['last_message_at'] as String).toLocal(),
+        district: json['district'] as String?,
+        recipientPhone: json['recipient_phone'] as String?,
+        parcelAmount: json['parcel_amount'] as int?,
       );
 }
 

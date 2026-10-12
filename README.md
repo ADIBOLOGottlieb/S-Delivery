@@ -28,11 +28,12 @@ Client                         Admin (web /admin)                 Livreur
 ```
 
 - **Rôles** : `client` (inscription libre dans l'app), `livreur` (compte créé par l'admin uniquement), `admin` (panneau web).
-- **Deux façons de commander** (bouton central « Livrer » de l'app) :
-  - *nouveau client* : formulaire guidé (A et B sur la carte, type, heure limite) + photos des articles (6 max) ;
-  - *client habitué* (au moins une livraison effectuée, ou marqué « Habitué » dans *Admin › Clients*) : **envoi rapide** — il envoie seulement les photos de ses articles et un message ; l'agence discute avec lui dans *Admin › Demandes* (texte, photos, positions partagées) puis **programme la livraison** (A/B sur une carte OpenStreetMap, prix auto ou convenu). Le client reçoit une notification et paie depuis la discussion. Les photos accompagnent la livraison jusqu'au livreur.
+- **Accueil** : 3 services en ronds photo — Plis & Colis, Programmée, Courses alimentaires.
+- **Deux façons de commander** (bouton central « Livrer » ou rond Plis & Colis) :
+  - *formulaire* : A et B sur la carte, type, heure limite + photos des articles (6 max) ;
+  - *programmation par photo* (tuile sous les types de livraison, réservée aux clients habitués : au moins une livraison effectuée, ou marqué « Habitué » dans *Admin › Clients*) : photo(s) du colis **+ quartier, numéro du destinataire et montant total du colis, tous obligatoires** (refus sinon, côté app et serveur) ; l'agence discute avec lui dans *Admin › Demandes* (texte, photos, positions partagées) puis **programme la livraison** (A/B sur une carte OpenStreetMap, prix auto ou convenu). Le client reçoit une notification et paie depuis la discussion. Les photos accompagnent la livraison jusqu'au livreur.
 - **Photo de profil** : client et livreur l'ajoutent / la changent depuis l'onglet Profil. Les photos (profil, articles, chat) sont stockées en base de données, elles survivent donc aux redémarrages de Render (disque éphémère).
-- **Marketplace** (Agroalimentaire dans l'app) : produits gérés par l'admin. Une commande crée une livraison dont le point A est l'adresse du vendeur ; le total = articles + frais de livraison.
+- **Marketplace** (« Courses alimentaires » dans l'app, sous-onglets Poissons et fruits de mer, Légumes, Céréales et conserves, Fruits, Viandes, Packs) : produits gérés par l'admin. Une commande crée une livraison dont le point A est l'adresse du vendeur ; le total = articles + frais de livraison.
 - **Tarif** : forfait + distance estimée × prix/km (+ supplément Express), minimum configurable, arrondi à 50 F. Réglable dans *Admin › Réglages*.
 - **Paiement** : Flooz et Mixx by Yas via un agrégateur (voir ci-dessous), confirmé automatiquement. Un livreur ne peut être assigné qu'après confirmation du paiement.
 

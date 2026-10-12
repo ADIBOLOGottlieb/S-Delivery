@@ -17,6 +17,8 @@ class DatabaseSeeder extends Seeder
         $this->call(ProductCatalogSeeder::class);
         // Sous-catégories Agro + packs d'exemple : une seule fois.
         $this->call(CatalogStructureSeeder::class);
+        // Courses alimentaires : Poissons et fruits de mer, Légumes, Céréales et conserves, Fruits, Viandes.
+        $this->call(FoodCatalogSeeder::class);
 
         if (app()->isProduction() && ! env('ADMIN_PASSWORD')) {
             $this->command?->warn('ADMIN_PASSWORD non défini : compte admin non créé.');

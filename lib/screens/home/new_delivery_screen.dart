@@ -13,6 +13,7 @@ import '../../widgets/bottom_action_bar.dart';
 import '../../widgets/delivery_type_tiles.dart';
 import '../../widgets/photos.dart';
 import '../../services/geocoding_service.dart';
+import '../chat/quick_request_screen.dart';
 import '../common/location_picker_screen.dart';
 
 /// Formulaire de demande de livraison du point A (récupération) au point B (destination).
@@ -170,6 +171,27 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
     setState(() => _scheduledAt = DateTime(date.year, date.month, date.day, time.hour, time.minute));
   }
 
+  /// Programmation par photo : réservée aux clients habitués (au moins une livraison effectuée).
+  Future<void> _openPhotoProgramming() async {
+    final regular = context.read<AuthService>().user?.isRegular ?? false;
+    if (!regular) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          icon: const Icon(Icons.lock_clock, color: AppColors.primaryDark, size: 36),
+          title: const Text('Programmation par photo'),
+          content: const Text(
+            "Disponible après votre première livraison. En attendant, remplissez le formulaire ci-dessous : "
+            'vous pouvez aussi y joindre les photos de vos articles.',
+          ),
+          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Compris'))],
+        ),
+      );
+      return;
+    }
+    Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const QuickRequestScreen()));
+  }
+
   Future<void> _addPhotos() async {
     final remaining = _maxPhotos - _photos.length;
     final fromCamera = await showModalBottomSheet<bool>(
@@ -311,6 +333,11 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
                 icon: const Icon(Icons.event),
                 label: Text(_scheduledAt == null ? 'Choisir date et heure' : formatDateTime(_scheduledAt!)),
               ),
+            ],
+            // Sous les programmations : commande par photo (quartier, numéro et montant obligatoires).
+            if (!_isOrder) ...[
+              const SizedBox(height: 12),
+              _PhotoProgrammingTile(onTap: _openPhotoProgramming),
             ],
             const SizedBox(height: 12),
             // Heure limite de livraison (visible par le livreur, avec rappels si elle approche).
@@ -463,6 +490,50 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
 
   static FormFieldValidator<String> _required(String message) =>
       (v) => (v == null || v.trim().isEmpty) ? message : null;
+}
+
+/// Tuile pleine largeur « Programmation par photo », sous les types de livraison.
+class _PhotoProgrammingTile extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _PhotoProgrammingTile({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.secondary,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: AppColors.primary,
+                child: Icon(Icons.add_a_photo, color: AppColors.onPrimary, size: 20),
+              ),
+              SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Programmation par photo',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
+                    Text('Photo + quartier, numéro et montant du colis',
+                        style: TextStyle(color: Colors.white70, fontSize: 12)),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: AppColors.primary),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _SectionTitle extends StatelessWidget {

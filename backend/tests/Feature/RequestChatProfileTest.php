@@ -74,10 +74,14 @@ class RequestChatProfileTest extends TestCase
         Sanctum::actingAs($client);
         $res = $this->post('/api/v1/requests', [
             'photos' => [$this->photo('robe.jpg'), $this->photo('sac.jpg')],
-            'message' => 'À livrer à Agoè demain matin',
+            'district' => 'Agoè Assiyéyé',
+            'recipient_phone' => '90 11 22 33',
+            'parcel_amount' => 15000,
+            'message' => 'À livrer demain matin',
         ], ['Accept' => 'application/json'])->assertCreated();
         $requestId = $res->json('data.id');
-        $this->assertCount(4, $res->json('data.messages')); // 2 photos + texte + accusé de réception
+        $res->assertJsonPath('data.district', 'Agoè Assiyéyé')->assertJsonPath('data.parcel_amount', 15000);
+        $this->assertCount(5, $res->json('data.messages')); // 2 photos + récapitulatif + texte + accusé de réception
 
         // 2. Il partage la position de livraison dans la discussion.
         $this->postJson("/api/v1/requests/{$requestId}/messages", ['lat' => 6.2, 'lng' => 1.2])
@@ -117,6 +121,31 @@ class RequestChatProfileTest extends TestCase
             ->assertOk()
             ->assertJsonCount(2, 'data.photos')
             ->assertJsonPath('data.request_id', $requestId);
+    }
+
+    public function test_photo_programming_is_refused_without_district_number_and_amount(): void
+    {
+        Sanctum::actingAs(User::factory()->create(['is_regular' => true]));
+        $headers = ['Accept' => 'application/json'];
+        $complete = [
+            'photos' => [$this->photo()],
+            'district' => 'Bè Kpota',
+            'recipient_phone' => '+228 90 00 00 00',
+            'parcel_amount' => 8000,
+        ];
+
+        foreach (['photos', 'district', 'recipient_phone', 'parcel_amount'] as $missing) {
+            $payload = $complete;
+            unset($payload[$missing]);
+            $this->post('/api/v1/requests', $payload, $headers)->assertUnprocessable()->assertJsonValidationErrors($missing);
+        }
+        $this->post('/api/v1/requests', [...$complete, 'recipient_phone' => '12'], $headers)
+            ->assertJsonValidationErrors('recipient_phone');
+        $this->post('/api/v1/requests', [...$complete, 'parcel_amount' => 0], $headers)
+            ->assertJsonValidationErrors('parcel_amount');
+        $this->assertDatabaseCount('delivery_requests', 0);
+
+        $this->post('/api/v1/requests', $complete, $headers)->assertCreated();
     }
 
     public function test_client_cannot_read_another_clients_request(): void

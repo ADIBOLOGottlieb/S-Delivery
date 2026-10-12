@@ -16,6 +16,9 @@ class DeliveryRequestResource extends JsonResource
             'status' => $this->status,
             'status_label' => $this->statusLabel(),
             'unread' => $this->unreadForClient(),
+            'district' => $this->district,
+            'recipient_phone' => $this->recipient_phone,
+            'parcel_amount' => $this->parcel_amount,
             'last_message' => $this->whenLoaded('latestMessage', fn () => $this->latestMessage
                 ? new ChatMessageResource($this->latestMessage->setRelation('request', $this->resource))
                 : null),

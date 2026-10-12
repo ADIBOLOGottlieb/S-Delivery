@@ -8,6 +8,7 @@ use App\Models\Promotion;
 use App\Models\Subcategory;
 use App\Models\User;
 use Database\Seeders\CatalogStructureSeeder;
+use Database\Seeders\FoodCatalogSeeder;
 use Database\Seeders\ProductCatalogSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request as HttpRequest;
@@ -70,6 +71,35 @@ class CatalogPromoReminderTest extends TestCase
         Subcategory::where('name', 'Légumes')->update(['name' => 'Légumes frais']);
         $this->seed(CatalogStructureSeeder::class);
         $this->assertSame(6, Subcategory::where('category', 'agro')->count());
+    }
+
+    public function test_food_catalog_has_the_five_requested_tabs_plus_packs(): void
+    {
+        // Même ordre qu'en production : catalogue, ancienne structure, puis restructuration.
+        $this->seed(ProductCatalogSeeder::class);
+        $this->seed(CatalogStructureSeeder::class);
+        $this->seed(FoodCatalogSeeder::class);
+
+        Sanctum::actingAs(User::factory()->create());
+        $res = $this->getJson('/api/v1/subcategories?category=agro')->assertOk()->assertJsonPath('has_packs', true);
+        $this->assertSame(
+            ['Poissons et fruits de mer', 'Légumes', 'Céréales et conserves', 'Fruits', 'Viandes'],
+            collect($res->json('data'))->pluck('name')->all(),
+        );
+
+        $products = fn (string $tab) => collect($this->getJson('/api/v1/products?category=agro&subcategory_id='
+            .collect($res->json('data'))->firstWhere('name', $tab)['id'])->json('data'))->pluck('name');
+
+        $this->assertContains('Poisson fumé', $products('Poissons et fruits de mer'));
+        $this->assertContains('Crevettes fraîches', $products('Poissons et fruits de mer'));
+        $this->assertContains('Poulet bicyclette', $products('Viandes'));
+        $this->assertContains('Igname', $products('Légumes'));
+        $this->assertContains('Riz local étuvé', $products('Céréales et conserves'));
+        $this->assertContains("Sardines à l'huile (boîte)", $products('Céréales et conserves'));
+        $this->assertContains('Mangue', $products('Fruits'));
+
+        // Aucun produit alimentaire sans onglet.
+        $this->assertSame(0, Product::where('category', 'agro')->where('type', 'product')->whereNull('subcategory_id')->count());
     }
 
     public function test_admin_renames_subcategories_and_creates_a_pack(): void

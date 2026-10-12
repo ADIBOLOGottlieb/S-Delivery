@@ -65,40 +65,88 @@ class HomeScreenState extends State<HomeScreen> {
     final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
+      // Fond crème chaud plutôt que blanc pur.
+      backgroundColor: AppColors.cream,
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _refresh,
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
             children: [
-              // En-tête : salutation + photo de profil (touchée = onglet Profil).
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+              // En-tête jaune : salutation, photo de profil et les 3 services en ronds photo.
+              Container(
+                padding: const EdgeInsets.fromLTRB(18, 18, 18, 20),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [AppColors.primary, Color(0xFFFFD866)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primaryDark.withValues(alpha: 0.35),
+                      blurRadius: 16,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    Row(
                       children: [
-                        Text('Bonjour ${user?.firstName ?? ''} 👋', style: textTheme.bodyLarge),
-                        Text(
-                          'Que livrons-nous ?',
-                          style: textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Bonjour ${user?.firstName ?? ''} 👋', style: textTheme.bodyLarge),
+                              Text(
+                                'Que livrons-nous ?',
+                                style: textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Semantics(
+                          button: true,
+                          label: 'Mon profil',
+                          child: GestureDetector(
+                            onTap: () => widget.onNavigate(MainScreen.tabProfile),
+                            child: Container(
+                              padding: const EdgeInsets.all(2.5),
+                              decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                              child: UserAvatar(user: user, radius: 24),
+                            ),
+                          ),
                         ),
                       ],
                     ),
-                  ),
-                  Semantics(
-                    button: true,
-                    label: 'Mon profil',
-                    child: GestureDetector(
-                      onTap: () => widget.onNavigate(MainScreen.tabProfile),
-                      child: Container(
-                        padding: const EdgeInsets.all(2.5),
-                        decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
-                        child: UserAvatar(user: user, radius: 24),
-                      ),
+                    const SizedBox(height: 20),
+                    // Les 3 services, en ronds photo centrés.
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _PhotoCircle(
+                          asset: 'assets/images/photo_bags.jpg',
+                          label: 'Plis & Colis',
+                          onTap: () => _newDelivery(DeliveryType.colis),
+                        ),
+                        _PhotoCircle(
+                          asset: 'assets/images/photo_courier_bags.jpg',
+                          alignment: const Alignment(0, -0.75),
+                          label: 'Programmée',
+                          onTap: () => _newDelivery(DeliveryType.programmee),
+                        ),
+                        _PhotoCircle(
+                          asset: 'assets/images/photo_food.jpg',
+                          label: 'Courses alimentaires',
+                          onTap: () => widget.onNavigate(MainScreen.tabAgro),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
               // Annonces promo gérées par l'admin (bandeau défilant).
               FutureBuilder<List<Promotion>>(
@@ -121,48 +169,7 @@ class HomeScreenState extends State<HomeScreen> {
                 },
               ),
               const SizedBox(height: 20),
-              _QuickOrderCard(regular: user?.isRegular ?? false, onTap: widget.onStartDelivery),
-              const SizedBox(height: 24),
-              Text('Nos services', style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-              const SizedBox(height: 12),
-              GridView.count(
-                crossAxisCount: 2,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                childAspectRatio: 1.25,
-                children: [
-                  _ServiceCard(
-                    icon: Icons.local_shipping,
-                    title: 'Plis & Colis',
-                    description: "D'un point A à un point B",
-                    color: AppColors.info,
-                    onTap: () => _newDelivery(DeliveryType.colis),
-                  ),
-                  _ServiceCard(
-                    icon: Icons.flash_on,
-                    title: 'Express',
-                    description: 'Prise en charge prioritaire',
-                    color: AppColors.warning,
-                    onTap: () => _newDelivery(DeliveryType.express),
-                  ),
-                  _ServiceCard(
-                    icon: Icons.event_available,
-                    title: 'Programmée',
-                    description: "Au jour et à l'heure choisis",
-                    color: const Color(0xFF7E57C2),
-                    onTap: () => _newDelivery(DeliveryType.programmee),
-                  ),
-                  _ServiceCard(
-                    icon: Icons.eco,
-                    title: 'Agroalimentaire',
-                    description: 'Produits frais locaux',
-                    color: AppColors.success,
-                    onTap: () => widget.onNavigate(MainScreen.tabAgro),
-                  ),
-                ],
-              ),
+              _QuickOrderCard(onTap: widget.onStartDelivery),
               const SizedBox(height: 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -226,12 +233,11 @@ class HomeScreenState extends State<HomeScreen> {
   }
 }
 
-/// Raccourci de commande : envoi par photos (habitué) ou formulaire guidé (nouveau client).
+/// Raccourci de commande (formulaire, avec l'option « programmation par photo »).
 class _QuickOrderCard extends StatelessWidget {
-  final bool regular;
   final VoidCallback onTap;
 
-  const _QuickOrderCard({required this.regular, required this.onTap});
+  const _QuickOrderCard({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -249,23 +255,21 @@ class _QuickOrderCard extends StatelessWidget {
                 width: 52,
                 height: 52,
                 decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(16)),
-                child: Icon(regular ? Icons.add_a_photo : Icons.delivery_dining, color: AppColors.onPrimary, size: 28),
+                child: const Icon(Icons.delivery_dining, color: AppColors.onPrimary, size: 28),
               ),
               const SizedBox(width: 14),
-              Expanded(
+              const Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      regular ? 'Envoi rapide' : 'Demander une livraison',
-                      style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800),
+                      'Demander une livraison',
+                      style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800),
                     ),
-                    const SizedBox(height: 2),
+                    SizedBox(height: 2),
                     Text(
-                      regular
-                          ? "Envoyez les photos de vos articles, on s'occupe du reste"
-                          : 'Points A et B sur la carte, photos des articles',
-                      style: const TextStyle(color: Colors.white70, fontSize: 12.5),
+                      'Formulaire A → B ou programmation par photo',
+                      style: TextStyle(color: Colors.white70, fontSize: 12.5),
                     ),
                   ],
                 ),
@@ -327,53 +331,49 @@ class _BrandBanner extends StatelessWidget {
   }
 }
 
-class _ServiceCard extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String description;
-  final Color color;
+/// Service de l'accueil : photo réaliste dans un rond à liseré blanc, libellé dessous.
+class _PhotoCircle extends StatelessWidget {
+  final String asset;
+  final String label;
   final VoidCallback onTap;
+  final Alignment alignment;
 
-  const _ServiceCard({
-    required this.icon,
-    required this.title,
-    required this.description,
-    required this.color,
+  const _PhotoCircle({
+    required this.asset,
+    required this.label,
     required this.onTap,
+    this.alignment = Alignment.center,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: EdgeInsets.zero,
-      child: InkWell(
+    return Semantics(
+      button: true,
+      label: label,
+      excludeSemantics: true,
+      child: GestureDetector(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
+        child: SizedBox(
+          width: 96,
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(14),
+                width: 84,
+                height: 84,
+                padding: const EdgeInsets.all(3),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [BoxShadow(color: Color(0x33000000), blurRadius: 10, offset: Offset(0, 4))],
                 ),
-                child: Icon(icon, color: color, size: 24),
+                child: ClipOval(child: Image.asset(asset, fit: BoxFit.cover, alignment: alignment)),
               ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(title, style: Theme.of(context).textTheme.titleMedium, maxLines: 1),
-                  ),
-                  Text(description,
-                      style: Theme.of(context).textTheme.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),
-                ],
+              const SizedBox(height: 8),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, height: 1.15),
               ),
             ],
           ),

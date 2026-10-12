@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
 import '../../models/delivery.dart';
-import '../../services/auth_service.dart';
 import '../../utils/colors.dart';
-import '../chat/quick_request_screen.dart';
 import 'delivery_detail_screen.dart';
 import 'home_screen.dart';
 import 'new_delivery_screen.dart';
@@ -21,17 +18,10 @@ class MainScreen extends StatefulWidget {
   static const tabDeliveries = 2;
   static const tabProfile = 3;
 
-  /// Démarre une commande de livraison :
-  /// - client habitué : envoi rapide de photos + discussion avec l'agence ;
-  /// - nouveau client : formulaire complet (avec photos des articles).
+  /// Démarre une commande : formulaire Plis & Colis, qui propose aussi
+  /// la « programmation par photo » (clients habitués) sous les types de livraison.
   static Future<void> startDelivery(BuildContext context, {DeliveryType type = DeliveryType.colis}) async {
-    final regular = context.read<AuthService>().user?.isRegular ?? false;
     final navigator = Navigator.of(context);
-
-    if (regular) {
-      final choice = await navigator.push<String>(MaterialPageRoute(builder: (_) => const QuickRequestScreen()));
-      if (choice != QuickRequestScreen.useForm) return;
-    }
     final created = await navigator.push<Delivery>(
       MaterialPageRoute(builder: (_) => NewDeliveryScreen(initialType: type)),
     );
@@ -115,7 +105,7 @@ class _FloatingNavBar extends StatelessWidget {
           child: Row(
             children: [
               item(MainScreen.tabHome, Icons.home_outlined, Icons.home_rounded, 'Accueil'),
-              item(MainScreen.tabAgro, Icons.eco_outlined, Icons.eco, 'Agro'),
+              item(MainScreen.tabAgro, Icons.shopping_basket_outlined, Icons.shopping_basket, 'Courses'),
               _CenterAction(onTap: onAction),
               item(MainScreen.tabDeliveries, Icons.receipt_long_outlined, Icons.receipt_long, 'Suivi'),
               item(MainScreen.tabProfile, Icons.person_outline_rounded, Icons.person_rounded, 'Profil'),

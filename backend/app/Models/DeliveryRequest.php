@@ -21,6 +21,8 @@ class DeliveryRequest extends Model
 
     protected $attributes = ['status' => self::OPEN];
 
+    protected $fillable = ['district', 'recipient_phone', 'parcel_amount'];
+
     protected function casts(): array
     {
         return [

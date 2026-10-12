@@ -153,7 +153,10 @@ class _ChatScreenState extends State<ChatScreen> {
             )
           : Column(
               children: [
-                if (r.delivery != null) _DeliveryBanner(delivery: r.delivery!, onChanged: _load),
+                if (r.delivery != null)
+                  _DeliveryBanner(delivery: r.delivery!, onChanged: _load)
+                else if (r.district != null)
+                  _ParcelSummary(request: r),
                 Expanded(
                   child: ListView.builder(
                     reverse: true,
@@ -193,6 +196,40 @@ class _AttachOption extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Rappel des éléments de la programmation par photo (quartier, numéro, montant).
+class _ParcelSummary extends StatelessWidget {
+  final ChatRequest request;
+
+  const _ParcelSummary({required this.request});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget item(IconData icon, String text) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: AppColors.primaryDark),
+            const SizedBox(width: 4),
+            Flexible(child: Text(text, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13))),
+          ],
+        );
+
+    return Container(
+      width: double.infinity,
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Wrap(
+        spacing: 16,
+        runSpacing: 6,
+        children: [
+          item(Icons.location_city, request.district!),
+          if (request.recipientPhone != null) item(Icons.phone, request.recipientPhone!),
+          if (request.parcelAmount != null) item(Icons.payments_outlined, formatFcfa(request.parcelAmount!)),
+        ],
       ),
     );
   }
