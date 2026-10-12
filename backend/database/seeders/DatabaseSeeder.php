@@ -19,6 +19,8 @@ class DatabaseSeeder extends Seeder
         $this->call(CatalogStructureSeeder::class);
         // Courses alimentaires : Poissons et fruits de mer, Légumes, Céréales et conserves, Fruits, Viandes.
         $this->call(FoodCatalogSeeder::class);
+        // Photos réalistes des produits (livrées avec l'app ; ne remplace pas celles de l'admin).
+        $this->call(CatalogImageSeeder::class);
 
         if (app()->isProduction() && ! env('ADMIN_PASSWORD')) {
             $this->command?->warn('ADMIN_PASSWORD non défini : compte admin non créé.');

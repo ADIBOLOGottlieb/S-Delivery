@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\Promotion;
 use App\Models\Subcategory;
 use App\Models\User;
+use Database\Seeders\CatalogImageSeeder;
 use Database\Seeders\CatalogStructureSeeder;
 use Database\Seeders\FoodCatalogSeeder;
 use Database\Seeders\ProductCatalogSeeder;
@@ -100,6 +101,29 @@ class CatalogPromoReminderTest extends TestCase
             ->assertSee('Tomate fraîche')
             ->assertDontSee('Mangue');
         $this->get('/admin/products/create')->assertOk()->assertDontSee('Shopping');
+    }
+
+    public function test_catalog_products_get_bundled_photos_without_overwriting_admin_uploads(): void
+    {
+        $this->seed(ProductCatalogSeeder::class);
+        $this->seed(CatalogStructureSeeder::class);
+        $this->seed(FoodCatalogSeeder::class);
+        Product::where('name', 'Mangue')->update(['image_path' => 'products/photo-admin.jpg']);
+
+        $this->seed(CatalogImageSeeder::class);
+
+        // Chaque photo référencée est bien livrée avec l'application.
+        foreach (CatalogImageSeeder::IMAGES as $file) {
+            if (Product::where('image_path', "catalog/$file.jpg")->exists()) {
+                $this->assertFileExists(public_path("images/catalog/$file.jpg"));
+            }
+        }
+        $this->assertGreaterThanOrEqual(45, Product::where('image_path', 'like', 'catalog/%')->count());
+        $this->assertSame('products/photo-admin.jpg', Product::where('name', 'Mangue')->value('image_path'));
+
+        Sanctum::actingAs(User::factory()->create());
+        $tomate = collect($this->getJson('/api/v1/products?category=agro&search=Tomate fraîche')->json('data'))->first();
+        $this->assertStringEndsWith('/images/catalog/tomate.jpg', $tomate['image_url']);
     }
 
     public function test_food_catalog_has_the_five_requested_tabs_plus_packs(): void

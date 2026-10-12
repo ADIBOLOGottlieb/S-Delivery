@@ -50,8 +50,23 @@ class Product extends Model
         return $this->belongsToMany(Product::class, 'pack_items', 'pack_id', 'product_id')->withPivot('quantity');
     }
 
+    /**
+     * Photo du produit : envoyée par l'admin (disque public), ou photo du catalogue de départ
+     * livrée avec l'application (public/images/catalog, préfixe « catalog/ ») qui survit aux redéploiements.
+     */
     public function imageUrl(): ?string
     {
-        return $this->image_path ? Storage::disk('public')->url($this->image_path) : null;
+        if (! $this->image_path) {
+            return null;
+        }
+
+        return str_starts_with($this->image_path, 'catalog/')
+            ? asset('images/'.$this->image_path)
+            : Storage::disk('public')->url($this->image_path);
+    }
+
+    public function hasUploadedImage(): bool
+    {
+        return $this->image_path !== null && ! str_starts_with($this->image_path, 'catalog/');
     }
 }
