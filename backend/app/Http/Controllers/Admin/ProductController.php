@@ -13,23 +13,35 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
-/** Gestion de la marketplace (Shopping & Agroalimentaire) : produits et packs. */
+/** Gestion des Courses alimentaires : produits et packs, rangés par sous-catégorie (comme dans l'app). */
 class ProductController extends Controller
 {
+    /** Seule catégorie vendue dans l'app (Shopping retiré). */
+    private const CATEGORY = 'agro';
+
     public function index(Request $request): View
     {
-        $category = $request->query('category');
         $type = $request->query('type');
+        $subcategoryId = $request->integer('subcategory') ?: null;
+
+        // Sous-onglets identiques à l'app : Tout, les sous-catégories, puis Packs.
+        $subcategories = Subcategory::where('category', self::CATEGORY)
+            ->withCount('products')
+            ->orderBy('position')
+            ->get();
 
         $products = Product::query()
             ->with('subcategory')
-            ->when(array_key_exists((string) $category, Product::CATEGORIES), fn ($q) => $q->where('category', $category))
-            ->when(in_array($type, ['product', 'pack'], true), fn ($q) => $q->where('type', $type))
+            ->where('category', self::CATEGORY)
+            ->when($type === 'pack', fn ($q) => $q->where('type', 'pack'))
+            ->when($subcategoryId, fn ($q, $id) => $q->where('subcategory_id', $id)->where('type', 'product'))
             ->latest()
             ->paginate(24)
             ->withQueryString();
 
-        return view('admin.products.index', compact('products', 'category', 'type'));
+        $packsCount = Product::where('category', self::CATEGORY)->where('type', 'pack')->count();
+
+        return view('admin.products.index', compact('products', 'type', 'subcategories', 'subcategoryId', 'packsCount'));
     }
 
     public function create(Request $request): View
@@ -38,8 +50,9 @@ class ProductController extends Controller
 
         return $this->form(new Product([
             'is_active' => true,
-            'category' => $isPack ? 'agro' : 'shopping',
+            'category' => self::CATEGORY,
             'type' => $isPack ? 'pack' : 'product',
+            'subcategory_id' => $isPack ? null : ($request->integer('subcategory') ?: null),
         ]));
     }
 
@@ -102,9 +115,9 @@ class ProductController extends Controller
     {
         return view('admin.products.form', [
             'product' => $product,
-            'subcategories' => Subcategory::orderBy('category')->orderBy('position')->get(),
-            'components' => Product::where('type', 'product')->where('is_active', true)
-                ->orderBy('category')->orderBy('name')->get(['id', 'name', 'price', 'unit', 'category']),
+            'subcategories' => Subcategory::where('category', self::CATEGORY)->orderBy('position')->get(),
+            'components' => Product::where('category', self::CATEGORY)->where('type', 'product')->where('is_active', true)
+                ->orderBy('name')->get(['id', 'name', 'price', 'unit', 'category']),
         ]);
     }
 

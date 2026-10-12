@@ -73,6 +73,35 @@ class CatalogPromoReminderTest extends TestCase
         $this->assertSame(6, Subcategory::where('category', 'agro')->count());
     }
 
+    public function test_shopping_is_retired_and_admin_shows_food_subcategory_tabs(): void
+    {
+        $shopping = Product::create([
+            'category' => 'shopping', 'name' => 'Pagne wax', 'price' => 15000, 'is_active' => true,
+            'pickup_address' => 'Déckon', 'pickup_lat' => 6.13, 'pickup_lng' => 1.22,
+        ]);
+        $this->seed(ProductCatalogSeeder::class);
+        $this->seed(CatalogStructureSeeder::class);
+        $this->seed(FoodCatalogSeeder::class);
+
+        // Masqué (pas supprimé : d'anciennes livraisons peuvent y être liées) et absent de l'API.
+        $this->assertFalse($shopping->refresh()->is_active);
+        Sanctum::actingAs(User::factory()->create());
+        $this->getJson('/api/v1/products?category=shopping')->assertUnprocessable();
+        $this->app['auth']->forgetGuards();
+
+        $this->actingAs(User::factory()->admin()->create());
+        $legumes = Subcategory::where('name', 'Légumes')->firstOrFail();
+        $this->get('/admin/products')->assertOk()
+            ->assertSee('Courses alimentaires')
+            ->assertSeeInOrder(['Poissons et fruits de mer', 'Légumes', 'Céréales et conserves', 'Fruits', 'Viandes', 'Packs'])
+            ->assertDontSee('Pagne wax')
+            ->assertDontSee('Shopping');
+        $this->get("/admin/products?subcategory={$legumes->id}")->assertOk()
+            ->assertSee('Tomate fraîche')
+            ->assertDontSee('Mangue');
+        $this->get('/admin/products/create')->assertOk()->assertDontSee('Shopping');
+    }
+
     public function test_food_catalog_has_the_five_requested_tabs_plus_packs(): void
     {
         // Même ordre qu'en production : catalogue, ancienne structure, puis restructuration.

@@ -30,6 +30,7 @@ class DeliveryRequest extends Model
             'last_message_id' => 'integer',
             'admin_read_id' => 'integer',
             'client_read_id' => 'integer',
+            'parcel_amount' => 'integer',
         ];
     }
 

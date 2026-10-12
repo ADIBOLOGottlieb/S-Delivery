@@ -102,32 +102,6 @@ class ProductCatalogSeeder extends Seeder
             ['agro', 'Poulet bicyclette', 'Poulet local vivant', 4500, 'pièce', 'Ferme avicole Agoè', 'agoe'],
             ['agro', 'Poisson fumé', 'Poisson · fumé artisanal', 2000, 'lot', 'Marché de Bè', 'be'],
             ['agro', 'Miel local', 'Miel naturel', 3000, 'pot 500 g', 'Coopérative Agoè', 'agoe'],
-
-            // --- Shopping : mode ---
-            ['shopping', 'Pagne wax 6 yards', 'Mode · tissu imprimé', 15000, 'pièce', 'Boutique Grand Marché', 'grand_marche'],
-            ['shopping', 'Pagne batik', 'Mode · tissu local', 8000, 'pièce', 'Boutique Grand Marché', 'grand_marche'],
-            ['shopping', 'Chemise en pagne homme', 'Mode · confection locale', 10000, 'pièce', 'Atelier Déckon', 'deckon'],
-            ['shopping', 'Robe en wax', 'Mode · confection locale', 15000, 'pièce', 'Atelier Déckon', 'deckon'],
-            ['shopping', 'Sac à main en cuir', 'Accessoire', 12000, 'pièce', 'Boutique Grand Marché', 'grand_marche'],
-            ['shopping', 'Sandales en cuir', 'Chaussures', 7000, 'paire', 'Boutique Grand Marché', 'grand_marche'],
-            ['shopping', 'Baskets', 'Chaussures', 15000, 'paire', 'Boutique Déckon', 'deckon'],
-            ['shopping', 'T-shirt coton', 'Mode', 3000, 'pièce', 'Boutique Déckon', 'deckon'],
-
-            // --- Shopping : électronique ---
-            ['shopping', 'Chargeur rapide USB-C', 'Électronique', 4000, 'pièce', 'Boutique Déckon', 'deckon'],
-            ['shopping', 'Écouteurs Bluetooth', 'Électronique', 8000, 'pièce', 'Boutique Déckon', 'deckon'],
-            ['shopping', 'Batterie externe 10 000 mAh', 'Électronique', 9000, 'pièce', 'Boutique Déckon', 'deckon'],
-            ['shopping', 'Câble USB', 'Électronique', 1000, 'pièce', 'Boutique Déckon', 'deckon'],
-            ['shopping', 'Lampe solaire rechargeable', 'Maison', 6000, 'pièce', 'Boutique Déckon', 'deckon'],
-
-            // --- Shopping : beauté, maison ---
-            ['shopping', 'Beurre de karité', 'Beauté · naturel', 1500, 'pot', 'Boutique Grand Marché', 'grand_marche'],
-            ['shopping', 'Savon noir', 'Beauté · artisanal', 500, 'pièce', 'Boutique Grand Marché', 'grand_marche'],
-            ['shopping', 'Lait de toilette', 'Beauté', 3500, 'flacon', 'Boutique Déckon', 'deckon'],
-            ['shopping', 'Parfum', 'Beauté', 10000, 'flacon', 'Boutique Déckon', 'deckon'],
-            ['shopping', 'Panier en osier', 'Maison · artisanat', 3000, 'pièce', 'Boutique Grand Marché', 'grand_marche'],
-            ['shopping', 'Marmite aluminium', 'Maison · cuisine', 7500, 'pièce', 'Boutique Grand Marché', 'grand_marche'],
-            ['shopping', 'Seau plastique 20 L', 'Maison', 2000, 'pièce', 'Boutique Grand Marché', 'grand_marche'],
         ];
     }
 }

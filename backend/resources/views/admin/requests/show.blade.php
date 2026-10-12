@@ -100,7 +100,7 @@
             @else
                 <section class="bg-white rounded-lg shadow-sm p-5">
                     <h2 class="font-semibold mb-1">Programmer la livraison</h2>
-                    <p class="text-xs text-gray-500 mb-4">Cliquez sur la carte ou cherchez une adresse pour placer A et B. Les photos de la discussion seront jointes à la livraison.</p>
+                    <p class="text-xs text-gray-500 mb-4">Le client envoie seulement la photo du colis : complétez ici le quartier (point B), le numéro du destinataire et le montant, à partir de la photo ou en l'appelant. Les photos de la discussion seront jointes à la livraison.</p>
 
                     <form method="POST" action="{{ route('admin.requests.schedule', $request) }}" id="schedule-form" class="space-y-4 text-sm">
                         @csrf
@@ -148,7 +148,12 @@
                         @endforeach
 
                         <textarea name="package_description" rows="2" placeholder="Contenu (ex. 2 robes, 1 sac)" class="w-full border rounded px-3 py-2">{{ old('package_description') }}</textarea>
-                        <textarea name="notes" rows="2" placeholder="Instructions pour le livreur" class="w-full border rounded px-3 py-2">{{ old('notes', $request->parcel_amount ? 'Montant total du colis : '.$money($request->parcel_amount) : '') }}</textarea>
+                        <textarea name="notes" rows="2" placeholder="Instructions pour le livreur" class="w-full border rounded px-3 py-2">{{ old('notes') }}</textarea>
+                        <div>
+                            <label class="block text-gray-600 mb-1">Montant total du colis (FCFA)</label>
+                            <input type="number" name="parcel_amount" min="0" step="50" value="{{ old('parcel_amount', $request->parcel_amount) }}"
+                                   placeholder="Lu sur la photo ou demandé au client" class="w-full border rounded px-3 py-2">
+                        </div>
                         <div class="grid grid-cols-2 gap-2">
                             <div>
                                 <label class="block text-gray-600 mb-1">Heure limite</label>

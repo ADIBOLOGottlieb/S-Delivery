@@ -1,23 +1,36 @@
 @extends('layouts.admin')
 
-@section('title', 'Marketplace')
+@section('title', 'Courses alimentaires')
 
 @section('content')
+    @php
+        $tab = fn (bool $active) => 'shrink-0 px-4 py-2 rounded-full text-sm font-medium '
+            .($active ? 'bg-black text-voom' : 'bg-white text-gray-700 hover:bg-gray-50 shadow-sm');
+    @endphp
+
     <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <h1 class="text-2xl font-bold">Marketplace</h1>
-        <div class="flex flex-wrap gap-2 text-sm">
-            <a href="{{ route('admin.products.index') }}" class="px-3 py-1.5 rounded {{ ! $category && ! $type ? 'bg-black text-voom' : 'bg-white' }}">Tous</a>
-            @foreach (\App\Models\Product::CATEGORIES as $key => $label)
-                <a href="{{ route('admin.products.index', ['category' => $key]) }}" class="px-3 py-1.5 rounded {{ $category === $key ? 'bg-black text-voom' : 'bg-white' }}">{{ $label }}</a>
-            @endforeach
-            <a href="{{ route('admin.products.index', ['type' => 'pack']) }}" class="px-3 py-1.5 rounded {{ $type === 'pack' ? 'bg-black text-voom' : 'bg-white' }}">Packs</a>
-            <a href="{{ route('admin.subcategories.index') }}" class="px-3 py-1.5 rounded bg-white underline">Sous-catégories</a>
+        <div>
+            <h1 class="text-2xl font-bold">🧺 Courses alimentaires</h1>
+            <p class="text-sm text-gray-500">Mêmes sous-onglets que dans l'app. <a href="{{ route('admin.subcategories.index') }}" class="underline">Renommer / réordonner les sous-catégories</a></p>
         </div>
         <div class="flex gap-2">
             <a href="{{ route('admin.products.create', ['type' => 'pack']) }}" class="border border-black font-semibold rounded px-4 py-2">+ Nouveau pack</a>
-            <a href="{{ route('admin.products.create') }}" class="bg-black text-voom font-semibold rounded px-4 py-2">+ Nouveau produit</a>
+            <a href="{{ route('admin.products.create', array_filter(['subcategory' => $subcategoryId])) }}" class="bg-black text-voom font-semibold rounded px-4 py-2">+ Nouveau produit</a>
         </div>
     </div>
+
+    {{-- Sous-onglets : Tout, sous-catégories (ordre de l'app), Packs en dernier. --}}
+    <nav class="flex gap-2 overflow-x-auto pb-2 mb-4">
+        <a href="{{ route('admin.products.index') }}" class="{{ $tab(! $subcategoryId && $type !== 'pack') }}">Tout</a>
+        @foreach ($subcategories as $sub)
+            <a href="{{ route('admin.products.index', ['subcategory' => $sub->id]) }}" class="{{ $tab($subcategoryId === $sub->id) }}">
+                {{ $sub->name }} <span class="opacity-60">({{ $sub->products_count }})</span>
+            </a>
+        @endforeach
+        <a href="{{ route('admin.products.index', ['type' => 'pack']) }}" class="{{ $tab($type === 'pack') }}">
+            Packs <span class="opacity-60">({{ $packsCount }})</span>
+        </a>
+    </nav>
 
     <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
         @forelse ($products as $product)
@@ -29,7 +42,7 @@
                 @endif
                 <div class="p-4">
                     <div class="text-xs text-gray-500">
-                        {{ \App\Models\Product::CATEGORIES[$product->category] ?? $product->category }}{{ $product->subcategory ? ' › '.$product->subcategory->name : '' }}
+                        {{ $product->isPack() ? 'Packs' : ($product->subcategory?->name ?? 'Sans sous-catégorie') }}
                         · {{ $product->vendor_name ?? 'VOOM' }}
                     </div>
                     <div class="font-semibold">

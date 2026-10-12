@@ -334,7 +334,7 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
                 label: Text(_scheduledAt == null ? 'Choisir date et heure' : formatDateTime(_scheduledAt!)),
               ),
             ],
-            // Sous les programmations : commande par photo (quartier, numéro et montant obligatoires).
+            // Sous les programmations : commande par simple photo du colis (l'agence complète le reste).
             if (!_isOrder) ...[
               const SizedBox(height: 12),
               _PhotoProgrammingTile(onTap: _openPhotoProgramming),
@@ -522,7 +522,7 @@ class _PhotoProgrammingTile extends StatelessWidget {
                   children: [
                     Text('Programmation par photo',
                         style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
-                    Text('Photo + quartier, numéro et montant du colis',
+                    Text('Une simple photo du colis suffit',
                         style: TextStyle(color: Colors.white70, fontSize: 12)),
                   ],
                 ),

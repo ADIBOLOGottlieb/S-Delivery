@@ -40,36 +40,29 @@ class RequestController extends Controller
             ]);
         }
 
-        // Programmation par photo : sans photo, quartier, numéro ET montant total, la demande est refusée.
+        // Programmation par photo : une photo du colis suffit (commerçants parfois illettrés).
+        // Quartier, numéro et montant sont facultatifs : l'admin les complète dans la discussion.
         $data = $request->validate([
             'photos' => ['required', 'array', 'min:1', 'max:'.self::MAX_PHOTOS],
             'photos.*' => ['image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
-            'district' => ['required', 'string', 'max:120'],
-            'recipient_phone' => ['required', 'string', 'max:30', 'regex:/^\+?[\d\s.-]{8,}$/'],
-            'parcel_amount' => ['required', 'integer', 'min:1', 'max:100000000'],
+            'district' => ['nullable', 'string', 'max:120'],
+            'recipient_phone' => ['nullable', 'string', 'max:30'],
+            'parcel_amount' => ['nullable', 'integer', 'min:1', 'max:100000000'],
             'message' => ['nullable', 'string', 'max:2000'],
         ], [
-            'photos.required' => 'Ajoutez au moins une photo du colis.',
-            'district.required' => 'Le quartier est obligatoire.',
-            'recipient_phone.required' => 'Le numéro du destinataire est obligatoire.',
-            'recipient_phone.regex' => 'Numéro du destinataire invalide.',
-            'parcel_amount.required' => 'Le montant total du colis est obligatoire.',
+            'photos.required' => 'Prenez au moins une photo du colis.',
         ]);
 
         $deliveryRequest = DB::transaction(function () use ($client, $data, $request) {
             $deliveryRequest = $client->deliveryRequests()->create([
-                'district' => $data['district'],
-                'recipient_phone' => $data['recipient_phone'],
-                'parcel_amount' => $data['parcel_amount'],
+                'district' => $data['district'] ?? null,
+                'recipient_phone' => $data['recipient_phone'] ?? null,
+                'parcel_amount' => $data['parcel_amount'] ?? null,
             ]);
 
             foreach ($request->file('photos', []) as $photo) {
                 $deliveryRequest->post($client, ['media_id' => Media::fromUpload($photo)->id]);
             }
-            $deliveryRequest->post($client, [
-                'body' => "Quartier : {$data['district']}\nNuméro : {$data['recipient_phone']}\n"
-                    .'Montant total du colis : '.number_format($data['parcel_amount'], 0, ',', ' ').' FCFA',
-            ]);
             if (! empty($data['message'])) {
                 $deliveryRequest->post($client, ['body' => $data['message']]);
             }

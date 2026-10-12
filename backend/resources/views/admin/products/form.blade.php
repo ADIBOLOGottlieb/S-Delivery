@@ -4,7 +4,7 @@
 
 @section('content')
     @php($isPack = old('type', $product->type) === 'pack')
-    <a href="{{ route('admin.products.index') }}" class="text-gray-500">← Marketplace</a>
+    <a href="{{ route('admin.products.index') }}" class="text-gray-500">← Courses alimentaires</a>
     <h1 class="text-2xl font-bold mt-2 mb-4">
         {{ $product->exists ? 'Modifier '.$product->name : ($isPack ? 'Nouveau pack' : 'Nouveau produit') }}
     </h1>
@@ -17,22 +17,14 @@
         <input type="hidden" name="type" value="{{ $isPack ? 'pack' : 'product' }}">
 
         <div class="grid grid-cols-2 gap-4">
-            <div>
-                <label class="block text-sm font-medium mb-1">Catégorie</label>
-                <select name="category" class="w-full border rounded px-3 py-2">
-                    @foreach (\App\Models\Product::CATEGORIES as $key => $label)
-                        <option value="{{ $key }}" @selected(old('category', $product->category) === $key)>{{ $label }}</option>
-                    @endforeach
-                </select>
-            </div>
-            <div>
-                <label class="block text-sm font-medium mb-1">Sous-catégorie (onglet)</label>
-                <select name="subcategory_id" class="w-full border rounded px-3 py-2">
-                    <option value="">— {{ $isPack ? 'Onglet « Packs »' : 'Aucune' }} —</option>
+            {{-- Une seule catégorie : Courses alimentaires (Shopping retiré). --}}
+            <input type="hidden" name="category" value="agro">
+            <div class="col-span-2">
+                <label class="block text-sm font-medium mb-1">Sous-catégorie (onglet de l'app)</label>
+                <select name="subcategory_id" class="w-full border rounded px-3 py-2" @required(! $isPack)>
+                    <option value="">{{ $isPack ? '— Onglet « Packs » —' : 'Choisir…' }}</option>
                     @foreach ($subcategories as $sub)
-                        <option value="{{ $sub->id }}" @selected(old('subcategory_id', $product->subcategory_id) == $sub->id)>
-                            {{ \App\Models\Product::CATEGORIES[$sub->category] ?? $sub->category }} › {{ $sub->name }}
-                        </option>
+                        <option value="{{ $sub->id }}" @selected(old('subcategory_id', $product->subcategory_id) == $sub->id)>{{ $sub->name }}</option>
                     @endforeach
                 </select>
             </div>

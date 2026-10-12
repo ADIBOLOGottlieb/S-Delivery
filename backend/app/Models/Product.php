@@ -19,7 +19,6 @@ class Product extends Model
     use HasFactory;
 
     public const CATEGORIES = [
-        'shopping' => 'Shopping',
         'agro' => 'Courses alimentaires',
     ];
 

@@ -87,22 +87,11 @@ class DeliveryService {
   Future<ChatRequest> chatRequest(int id) async =>
       ChatRequest.fromJson((await _api.get('/requests/$id') as Map<String, dynamic>)['data'] as Map<String, dynamic>);
 
-  /// Programmation par photo : quartier, numéro et montant total du colis sont obligatoires.
-  Future<ChatRequest> createChatRequest({
-    required List<String> photoPaths,
-    required String district,
-    required String recipientPhone,
-    required int parcelAmount,
-    String? message,
-  }) async {
+  /// Programmation par photo : la photo du colis suffit, l'agence complète le reste.
+  Future<ChatRequest> createChatRequest({required List<String> photoPaths, String? message}) async {
     final data = await _api.postFiles(
       '/requests',
-      fields: {
-        'district': district,
-        'recipient_phone': recipientPhone,
-        'parcel_amount': '$parcelAmount',
-        if (message != null && message.isNotEmpty) 'message': message,
-      },
+      fields: {if (message != null && message.isNotEmpty) 'message': message},
       files: [for (final p in photoPaths) ('photos[]', p)],
     );
     return ChatRequest.fromJson((data as Map<String, dynamic>)['data'] as Map<String, dynamic>);

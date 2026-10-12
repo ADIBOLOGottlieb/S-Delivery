@@ -53,6 +53,8 @@ class FoodCatalogSeeder extends Seeder
 
     public function run(): void
     {
+        $this->retireShopping();
+
         if (Setting::get('food_catalog_v2')) {
             return;
         }
@@ -85,6 +87,22 @@ class FoodCatalogSeeder extends Seeder
         Subcategory::whereIn('id', $legacyIds)->delete();
 
         Setting::put(['food_catalog_v2' => '1']);
+    }
+
+    /**
+     * Shopping retiré de l'app et du panneau admin (une seule fois) : les produits sont masqués,
+     * pas supprimés, car d'anciennes livraisons peuvent y faire référence.
+     */
+    private function retireShopping(): void
+    {
+        if (Setting::get('shopping_retired')) {
+            return;
+        }
+
+        Product::where('category', 'shopping')->update(['is_active' => false]);
+        Subcategory::where('category', 'shopping')->delete();
+
+        Setting::put(['shopping_retired' => '1']);
     }
 
     private function classify(Product $product): string

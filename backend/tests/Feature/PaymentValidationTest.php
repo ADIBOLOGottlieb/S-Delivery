@@ -108,11 +108,11 @@ class PaymentValidationTest extends TestCase
         $this->assertSame('simulation', Setting::get('payment_mode'));
     }
 
-    public function test_catalog_is_seeded_once_with_shopping_and_agro_products(): void
+    public function test_catalog_is_seeded_once_with_food_products_only(): void
     {
         $this->seed(ProductCatalogSeeder::class);
 
-        $this->assertGreaterThanOrEqual(15, Product::where('category', 'shopping')->count());
+        $this->assertSame(0, Product::where('category', 'shopping')->count());
         $this->assertGreaterThanOrEqual(35, Product::where('category', 'agro')->count());
         $this->assertTrue(Product::where('name', 'Maïs jaune (grain)')->exists());
 

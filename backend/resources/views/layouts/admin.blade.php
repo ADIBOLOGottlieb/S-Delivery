@@ -20,7 +20,7 @@
             ['admin.requests.index', 'Demandes', 'admin.requests.*'],
             ['admin.couriers.index', 'Livreurs', 'admin.couriers.*'],
             ['admin.clients.index', 'Clients', 'admin.clients.*'],
-            ['admin.products.index', 'Marketplace', 'admin.products.*'],
+            ['admin.products.index', 'Courses alimentaires', 'admin.products.*'],
             ['admin.promotions.index', 'Promos', 'admin.promotions.*'],
             ['admin.settings.edit', 'Réglages', 'admin.settings.*'],
         ];

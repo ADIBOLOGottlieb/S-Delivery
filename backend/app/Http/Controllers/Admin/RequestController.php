@@ -95,12 +95,25 @@ class RequestController extends Controller
             'deadline_at' => ['nullable', 'date', 'after:now'],
             // Vide = tarif calculé selon la distance ; sinon prix convenu dans la discussion.
             'delivery_fee' => ['nullable', 'integer', 'min:0', 'max:1000000'],
+            // Saisi par l'admin (le client n'envoie qu'une photo) ; rappelé au livreur dans les instructions.
+            'parcel_amount' => ['nullable', 'integer', 'min:0', 'max:100000000'],
         ]);
 
         $type = DeliveryType::from($data['type']);
         $quote = $pricing->quote($type, $data['pickup_lat'], $data['pickup_lng'], $data['dropoff_lat'], $data['dropoff_lng']);
         $fee = $data['delivery_fee'] ?? $quote['delivery_fee'];
-        unset($data['delivery_fee']);
+        $parcelAmount = $data['parcel_amount'] ?? null;
+        unset($data['delivery_fee'], $data['parcel_amount']);
+
+        if ($parcelAmount) {
+            $line = 'Montant total du colis : '.number_format($parcelAmount, 0, ',', ' ').' FCFA';
+            $data['notes'] = trim($line."\n".($data['notes'] ?? ''));
+        }
+        $deliveryRequest->forceFill([
+            'district' => $deliveryRequest->district ?? $data['dropoff_address'],
+            'recipient_phone' => $deliveryRequest->recipient_phone ?? $data['recipient_phone'],
+            'parcel_amount' => $parcelAmount ?? $deliveryRequest->parcel_amount,
+        ]);
 
         $delivery = DB::transaction(function () use ($deliveryRequest, $data, $quote, $fee) {
             $delivery = $deliveryRequest->client->deliveries()->create([
