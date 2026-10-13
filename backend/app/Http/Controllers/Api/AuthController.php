@@ -6,6 +6,7 @@ use App\Enums\Role;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
 use App\Models\User;
+use App\Support\Phone;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -20,9 +21,17 @@ class AuthController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['nullable', 'email', 'max:255', 'unique:users,email'],
-            'phone_number' => ['required', 'string', 'max:30', 'unique:users,phone_number'],
+            'phone_number' => ['required', 'string', 'max:30'],
             'password' => ['required', 'confirmed', Password::min(8)],
         ]);
+
+        // Numéro enregistré sous une seule forme ; un ancien client déjà créé par l'agence est redirigé.
+        $data['phone_number'] = Phone::normalize($data['phone_number']);
+        if (User::whereIn('phone_number', Phone::variants($data['phone_number']))->exists()) {
+            throw ValidationException::withMessages([
+                'phone_number' => "Ce numéro a déjà un compte VOOM. Connectez-vous avec l'identifiant reçu de l'agence.",
+            ]);
+        }
 
         $user = User::create([...$data, 'role' => Role::Client]);
 
@@ -40,9 +49,10 @@ class AuthController extends Controller
             'password' => ['required', 'string'],
         ]);
 
+        // Le numéro est accepté sous toutes ses écritures (90 11 22 33, 22890112233, +228…).
         $user = User::query()
             ->where('email', $data['login'])
-            ->orWhere('phone_number', $data['login'])
+            ->orWhereIn('phone_number', Phone::variants($data['login']))
             ->first();
 
         if (! $user || ! Hash::check($data['password'], $user->password)) {

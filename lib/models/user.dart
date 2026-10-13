@@ -12,6 +12,9 @@ class User {
   final String role;
   final String? vehicle;
 
+  /// Quartier (renseigné par l'agence pour ses anciens clients).
+  final String? district;
+
   /// Photo de profil (URL publique servie par l'API), null si aucune.
   final String? avatarUrl;
 
@@ -25,6 +28,7 @@ class User {
     required this.phoneNumber,
     required this.role,
     this.vehicle,
+    this.district,
     this.avatarUrl,
     this.isRegular = false,
   });
@@ -49,6 +53,7 @@ class User {
         phoneNumber: json['phone_number'] as String,
         role: json['role'] as String,
         vehicle: json['vehicle'] as String?,
+        district: json['district'] as String?,
         avatarUrl: json['avatar_url'] as String?,
         isRegular: json['is_regular'] as bool? ?? false,
       );
@@ -60,6 +65,7 @@ class User {
         'phone_number': phoneNumber,
         'role': role,
         'vehicle': vehicle,
+        'district': district,
         'avatar_url': avatarUrl,
         'is_regular': isRegular,
       };

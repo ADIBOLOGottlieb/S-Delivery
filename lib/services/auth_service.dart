@@ -62,6 +62,21 @@ class AuthService extends ChangeNotifier {
 
   Future<void> removeAvatar() async => _saveUser(await _api.delete('/me/avatar'));
 
+  /// Identifiants de connexion (reçus de l'agence ou choisis à l'inscription).
+  /// Lève [ApiException] (ex. mot de passe actuel incorrect).
+  Future<void> updateCredentials({
+    required String currentPassword,
+    String? phoneNumber,
+    String? email,
+    String? newPassword,
+  }) async =>
+      _saveUser(await _api.put('/me/credentials', {
+        'current_password': currentPassword,
+        if (phoneNumber != null) 'phone_number': phoneNumber,
+        if (email != null) 'email': email.isEmpty ? null : email,
+        if (newPassword != null) ...{'password': newPassword, 'password_confirmation': newPassword},
+      }));
+
   Future<void> _saveUser(dynamic response) async {
     _user = User.fromJson((response as Map<String, dynamic>)['data'] as Map<String, dynamic>);
     await _storage.write(key: _userKey, value: jsonEncode(_user!.toJson()));

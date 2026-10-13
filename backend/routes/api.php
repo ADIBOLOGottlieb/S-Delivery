@@ -25,6 +25,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/me/device-token', [AuthController::class, 'deviceToken']);
         Route::post('/me/avatar', [ProfileController::class, 'updateAvatar'])->middleware('throttle:20,1');
         Route::delete('/me/avatar', [ProfileController::class, 'deleteAvatar']);
+        Route::put('/me/credentials', [ProfileController::class, 'updateCredentials'])->middleware('throttle:10,1');
 
         Route::get('/products', [CatalogController::class, 'products']);
         Route::get('/subcategories', [CatalogController::class, 'subcategories']);

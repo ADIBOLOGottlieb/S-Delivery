@@ -57,7 +57,8 @@ class _LoginScreenState extends State<LoginScreen> {
       footer: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24),
         child: Text(
-          "Vous êtes livreur ? Votre compte est créé par l'agence VOOM.",
+          "Déjà client de l'agence ou livreur ? Connectez-vous avec le numéro et le mot de passe "
+          'reçus de VOOM, sans vous inscrire.',
           textAlign: TextAlign.center,
           style: textTheme.bodySmall,
         ),

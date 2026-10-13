@@ -60,6 +60,14 @@ class ApiClient {
 
   Future<dynamic> delete(String path) => _send(() => _http.delete(_uri(path), headers: _headers));
 
+  Future<dynamic> put(String path, Map<String, dynamic> body) => _send(
+        () => _http.put(
+          _uri(path),
+          headers: {..._headers, 'Content-Type': 'application/json'},
+          body: jsonEncode(body),
+        ),
+      );
+
   Future<dynamic> postMultipart(
     String path, {
     required Map<String, String> fields,

@@ -8,6 +8,7 @@ import '../../utils/launchers.dart';
 import '../../widgets/photos.dart';
 import '../../widgets/user_avatar.dart';
 import '../auth/login_screen.dart';
+import 'credentials_screen.dart';
 
 /// Profil (partagé par le client et le livreur).
 class ProfileScreen extends StatefulWidget {
@@ -170,6 +171,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
               title: Text(hasPhoto ? 'Changer la photo de profil' : 'Ajouter une photo de profil'),
               trailing: const Icon(Icons.chevron_right),
               onTap: _uploading ? null : _editPhoto,
+            ),
+          ),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.key_outlined),
+              title: const Text('Mes identifiants'),
+              subtitle: const Text('Numéro, email, mot de passe'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CredentialsScreen())),
             ),
           ),
           Card(

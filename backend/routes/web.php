@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AuthController;
+use App\Http\Controllers\Admin\ClientAccountController;
 use App\Http\Controllers\Admin\DeliveryController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\PromotionController;
@@ -52,6 +53,13 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::put('/couriers/{courier}', [UserController::class, 'update'])->name('couriers.update');
 
         Route::get('/clients', [UserController::class, 'clients'])->name('clients.index');
+        // Anciens clients de l'agence : création / import avec identifiants à leur transmettre.
+        Route::get('/clients/create', [ClientAccountController::class, 'create'])->name('clients.create');
+        Route::post('/clients', [ClientAccountController::class, 'store'])->name('clients.store');
+        Route::get('/clients/import', [ClientAccountController::class, 'importForm'])->name('clients.import');
+        Route::post('/clients/import', [ClientAccountController::class, 'import'])->name('clients.import.store');
+        Route::get('/clients/credentials', [ClientAccountController::class, 'credentials'])->name('clients.credentials');
+        Route::post('/clients/{client}/password', [ClientAccountController::class, 'resetPassword'])->name('clients.password');
         Route::post('/clients/{client}/toggle', [UserController::class, 'toggleClient'])->name('clients.toggle');
         Route::post('/clients/{client}/regular', [UserController::class, 'toggleRegular'])->name('clients.regular');
 

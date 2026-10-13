@@ -38,6 +38,11 @@ return [
         'secret' => env('CRON_SECRET'),
     ],
 
+    // Lien de téléchargement de l'app, envoyé aux clients avec leurs identifiants.
+    'apk' => [
+        'url' => env('APK_URL', 'https://github.com/ADIBOLOGottlieb/voom-delivery-app/releases/latest/download/voom-delivery.apk'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),
