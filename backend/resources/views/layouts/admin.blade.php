@@ -11,7 +11,9 @@
     </script>
     @stack('head')
 </head>
-<body class="bg-gray-100 text-gray-900 min-h-screen">
+{{-- Fond : photo du livreur VOOM (casquette jaune) sous un voile crème, pour garder le contenu lisible. --}}
+<body class="text-gray-900 min-h-screen"
+      style="background: linear-gradient(rgba(255, 243, 214, 0.76), rgba(255, 243, 214, 0.80)), url('{{ asset('images/photo-courier.jpg') }}') center top / cover fixed no-repeat, #FFF3D6;">
 @auth
     @php
         $nav = [
