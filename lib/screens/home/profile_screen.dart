@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../config/api_config.dart';
 import '../../services/api_client.dart';
 import '../../services/auth_service.dart';
 import '../../utils/colors.dart';
@@ -187,16 +186,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               leading: Icon(Icons.info_outline),
               title: Text('À propos'),
               subtitle: Text('VOOM Delivery · Lomé, Togo · v1.0.0'),
-            ),
-          ),
-          // Mention des auteurs exigée par les licences CC BY des photos du catalogue.
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('Crédits photos'),
-              subtitle: const Text('Photos du catalogue sous licence libre'),
-              trailing: const Icon(Icons.open_in_new),
-              onTap: () => openUrl(context, '${ApiConfig.serverRoot}/images/catalog/CREDITS.md'),
             ),
           ),
           const SizedBox(height: 24),

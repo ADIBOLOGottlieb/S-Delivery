@@ -17,10 +17,6 @@ Future<void> openMapAt(BuildContext context, double lat, double lng) {
   return _launch(context, uri, 'Impossible d\'ouvrir la carte.');
 }
 
-/// Ouvre une page web dans le navigateur.
-Future<void> openUrl(BuildContext context, String url) =>
-    _launch(context, Uri.parse(url), 'Impossible d\'ouvrir la page.');
-
 Future<void> callPhone(BuildContext context, String phone) {
   final uri = Uri(scheme: 'tel', path: phone.replaceAll(' ', ''));
   return _launch(context, uri, 'Impossible de lancer l\'appel.');
