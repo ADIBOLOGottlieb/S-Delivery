@@ -23,7 +23,6 @@
                 <th class="px-4 py-2">Téléphone</th>
                 <th class="px-4 py-2">Email</th>
                 <th class="px-4 py-2 text-center">Livraisons</th>
-                <th class="px-4 py-2 text-center" title="Peut commander par simple envoi de photos (demande rapide + chat)">Habitué</th>
                 <th class="px-4 py-2">Inscrit le</th>
                 <th class="px-4 py-2"></th>
             </tr>
@@ -45,18 +44,6 @@
                     <td class="px-4 py-2">{{ $client->email ?? '—' }}</td>
                     <td class="px-4 py-2 text-center">
                         <a class="text-blue-600 underline" href="{{ route('admin.deliveries.index', ['search' => $client->phone_number]) }}">{{ $client->deliveries_count }}</a>
-                    </td>
-                    <td class="px-4 py-2 text-center">
-                        @if ($client->delivered_count > 0)
-                            <span class="text-green-700 text-xs font-semibold" title="Au moins une livraison effectuée">✔ Auto</span>
-                        @else
-                            <form method="POST" action="{{ route('admin.clients.regular', $client) }}">
-                                @csrf
-                                <button class="text-xs px-2 py-1 rounded {{ $client->is_regular ? 'bg-voom text-black font-semibold' : 'border text-gray-600' }}">
-                                    {{ $client->is_regular ? '✔ Oui' : 'Non' }}
-                                </button>
-                            </form>
-                        @endif
                     </td>
                     <td class="px-4 py-2">{{ $client->created_at->format('d/m/Y') }}</td>
                     <td class="px-4 py-2 text-right whitespace-nowrap">

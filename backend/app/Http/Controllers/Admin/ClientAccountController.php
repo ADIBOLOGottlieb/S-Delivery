@@ -15,7 +15,6 @@ use Illuminate\View\View;
 /**
  * Comptes des anciens clients de l'agence, créés depuis le panneau admin :
  * l'agence leur transmet leurs identifiants (numéro + mot de passe), modifiables ensuite dans l'app.
- * Ils sont d'emblée « habitués » (programmation par photo disponible).
  */
 class ClientAccountController extends Controller
 {
@@ -148,7 +147,6 @@ class ClientAccountController extends Controller
             'password' => $password,
             'role' => Role::Client,
             'is_active' => true,
-            'is_regular' => true,
         ]);
     }
 

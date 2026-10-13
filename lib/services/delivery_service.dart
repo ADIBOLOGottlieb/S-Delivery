@@ -64,7 +64,7 @@ class DeliveryService {
   Future<Delivery> addDeliveryPhoto(int deliveryId, String filePath) async =>
       _one(await _api.postFiles('/deliveries/$deliveryId/photos', files: [('photo', filePath)]));
 
-  // --- Demandes rapides (clients habitués) : photos + chat ----------------
+  // --- Demandes rapides (programmation par photo) : photos + chat ----------------
 
   Future<List<ChatRequest>> chatRequests() async => _list(await _api.get('/requests'), ChatRequest.fromJson);
 

@@ -240,24 +240,8 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
     });
   }
 
-  /// Programmation par photo : réservée aux clients habitués (au moins une livraison effectuée).
-  Future<void> _openPhotoProgramming() async {
-    final regular = context.read<AuthService>().user?.isRegular ?? false;
-    if (!regular) {
-      await showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          icon: const Icon(Icons.lock_clock, color: AppColors.primaryDark, size: 36),
-          title: const Text('Programmation par photo'),
-          content: const Text(
-            'Disponible après votre première livraison. En attendant, remplissez ce formulaire : '
-            'vous pouvez aussi y joindre les photos de vos articles.',
-          ),
-          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Compris'))],
-        ),
-      );
-      return;
-    }
+  /// Programmation par photo : ouverte à tout client connecté, au même titre que le formulaire.
+  void _openPhotoProgramming() {
     Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const QuickRequestScreen()));
   }
 

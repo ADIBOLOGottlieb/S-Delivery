@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Demandes rapides des clients habitués : photos des articles + chat avec l'agence,
+ * Demandes rapides (tout client connecté) : photos des articles + chat avec l'agence,
  * qui programme ensuite la livraison depuis le panneau admin.
  */
 class RequestController extends Controller
@@ -34,11 +34,6 @@ class RequestController extends Controller
     public function store(Request $request): JsonResponse
     {
         $client = $request->user();
-        if (! $client->isRegularClient()) {
-            throw ValidationException::withMessages([
-                'photos' => 'La commande par photos est réservée aux clients habitués. Utilisez le formulaire de livraison.',
-            ]);
-        }
 
         // Programmation par photo : une photo du colis suffit (commerçants parfois illettrés).
         // Quartier, numéro et montant sont facultatifs : l'admin les complète dans la discussion.

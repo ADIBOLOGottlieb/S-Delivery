@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../../models/chat.dart';
 import '../../models/delivery.dart';
-import '../../services/auth_service.dart';
 import '../../services/delivery_service.dart';
 import '../../utils/colors.dart';
 import '../../utils/formatters.dart';
@@ -135,7 +134,6 @@ class PlisColisScreenState extends State<PlisColisScreen> {
   }
 
   Widget _chatsTab() {
-    final regular = context.watch<AuthService>().user?.isRegular ?? false;
     return FutureBuilder<List<ChatRequest>>(
       future: _chats,
       builder: (context, snapshot) {
@@ -146,10 +144,7 @@ class PlisColisScreenState extends State<PlisColisScreen> {
         if (items.isEmpty) {
           return _Empty(
             icon: Icons.forum_outlined,
-            text: regular
-                ? 'Aucune discussion.\nAppuyez sur « Livrer » et envoyez les photos de vos articles.'
-                : 'Après votre première livraison, commandez en envoyant simplement des photos : '
-                    "l'agence programme tout avec vous ici.",
+            text: 'Aucune discussion.\nAppuyez sur « Livrer » et envoyez les photos de vos articles.',
           );
         }
         return ListView.separated(

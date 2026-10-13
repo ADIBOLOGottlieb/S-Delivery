@@ -39,7 +39,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('/payments/{payment}/reject', [DeliveryController::class, 'rejectPayment'])->name('payments.reject');
         Route::get('/payments/{payment}/screenshot', [DeliveryController::class, 'screenshot'])->name('payments.screenshot');
 
-        // Demandes rapides (photos + chat) des clients habitués.
+        // Demandes rapides (photos + chat) des clients.
         Route::get('/requests', [RequestController::class, 'index'])->name('requests.index');
         Route::get('/requests/{deliveryRequest}', [RequestController::class, 'show'])->name('requests.show');
         Route::post('/requests/{deliveryRequest}/reply', [RequestController::class, 'reply'])->name('requests.reply');
@@ -61,7 +61,6 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/clients/credentials', [ClientAccountController::class, 'credentials'])->name('clients.credentials');
         Route::post('/clients/{client}/password', [ClientAccountController::class, 'resetPassword'])->name('clients.password');
         Route::post('/clients/{client}/toggle', [UserController::class, 'toggleClient'])->name('clients.toggle');
-        Route::post('/clients/{client}/regular', [UserController::class, 'toggleRegular'])->name('clients.regular');
 
         Route::resource('products', ProductController::class)->except('show');
 

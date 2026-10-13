@@ -18,9 +18,6 @@ class User {
   /// Photo de profil (URL publique servie par l'API), null si aucune.
   final String? avatarUrl;
 
-  /// Client habitué : peut commander par simple envoi de photos (demande rapide + chat).
-  final bool isRegular;
-
   const User({
     required this.id,
     required this.name,
@@ -30,7 +27,6 @@ class User {
     this.vehicle,
     this.district,
     this.avatarUrl,
-    this.isRegular = false,
   });
 
   bool get isCourier => role == UserRole.courier;
@@ -39,7 +35,7 @@ class User {
   String get roleLabel => switch (role) {
         UserRole.courier => 'Livreur',
         UserRole.admin => 'Administrateur',
-        _ => isRegular ? 'Client fidèle' : 'Client',
+        _ => 'Client',
       };
 
   String get initial => name.trim().isEmpty ? 'U' : name.trim()[0].toUpperCase();
@@ -55,7 +51,6 @@ class User {
         vehicle: json['vehicle'] as String?,
         district: json['district'] as String?,
         avatarUrl: json['avatar_url'] as String?,
-        isRegular: json['is_regular'] as bool? ?? false,
       );
 
   Map<String, dynamic> toJson() => {
@@ -67,6 +62,5 @@ class User {
         'vehicle': vehicle,
         'district': district,
         'avatar_url': avatarUrl,
-        'is_regular': isRegular,
       };
 }

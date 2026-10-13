@@ -30,7 +30,7 @@ Client                         Admin (web /admin)                 Livreur
 - **Accueil** : 3 services en ronds photo — Plis & Colis, Programmée, Courses alimentaires.
 - **Deux façons de commander** (bouton central « Livrer » ou rond Plis & Colis) :
   - *formulaire* : A et B sur la carte, type, heure limite + photos des articles (6 max) ;
-  - *programmation par photo* (tuile sous les types de livraison, réservée aux clients habitués : au moins une livraison effectuée, ou marqué « Habitué » dans *Admin › Clients*) : **une simple photo du colis suffit** (écran à gros boutons, pensé pour les commerçants qui lisent peu ; l'agence saisit quartier, numéro et montant total du colis) ; l'agence discute avec lui dans *Admin › Demandes* (texte, photos, positions partagées) puis **programme la livraison** (A/B sur une carte OpenStreetMap, prix auto ou convenu). Le client reçoit une notification et paie depuis la discussion. Les photos accompagnent la livraison jusqu'au livreur.
+  - *programmation par photo* (tuile sous les types de livraison, ouverte à tout client connecté, au même titre que le formulaire) : **une simple photo du colis suffit** (écran à gros boutons, pensé pour les commerçants qui lisent peu ; l'agence saisit quartier, numéro et montant total du colis) ; l'agence discute avec lui dans *Admin › Demandes* (texte, photos, positions partagées) puis **programme la livraison** (A/B sur une carte OpenStreetMap, prix auto ou convenu). Le client reçoit une notification et paie depuis la discussion. Les photos accompagnent la livraison jusqu'au livreur.
 - **Photo de profil** : client et livreur l'ajoutent / la changent depuis l'onglet Profil. Les photos (profil, articles, chat) sont stockées en base de données, elles survivent donc aux redémarrages de Render (disque éphémère).
 - **Marketplace** (« Courses alimentaires » dans l'app, sous-onglets Poissons et fruits de mer, Légumes, Céréales et conserves, Fruits, Viandes, Packs) : produits gérés par l'admin. Une commande crée une livraison dont le point A est l'adresse du vendeur ; le total = articles + frais de livraison.
 - **Tarif** : forfait + distance estimée × prix/km (+ supplément Express), minimum configurable, arrondi à 50 F. Réglable dans *Admin › Réglages*.
@@ -141,7 +141,7 @@ Tests : `flutter test` · analyse : `flutter analyze`.
 | POST | `/deliveries/{id}/cancel` | client | Annulation (avant confirmation du paiement) |
 | POST | `/deliveries/{id}/photos` | client | Photo d'un article (multipart, `photo`) |
 | POST · DELETE | `/me/avatar` | connecté | Photo de profil (multipart, `photo`) · suppression |
-| GET · POST | `/requests` | client habitué | Discussions · envoi rapide (`photos[]`, `message`) |
+| GET · POST | `/requests` | client | Discussions · envoi rapide (`photos[]`, `message`) |
 | GET | `/requests/{id}` | client | Discussion + livraison programmée |
 | POST | `/requests/{id}/messages` | client | Message : `body`, `photo` ou `lat`/`lng` |
 | GET | `/courier/deliveries[?scope=history]` | livreur | Livraisons assignées |

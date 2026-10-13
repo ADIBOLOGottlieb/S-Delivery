@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use App\Enums\DeliveryStatus;
 use App\Enums\Role;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -15,7 +14,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
-#[Fillable(['name', 'email', 'phone_number', 'district', 'password', 'role', 'is_active', 'is_regular', 'vehicle'])]
+#[Fillable(['name', 'email', 'phone_number', 'district', 'password', 'role', 'is_active', 'vehicle'])]
 #[Hidden(['password', 'remember_token', 'fcm_token'])]
 class User extends Authenticatable
 {
@@ -29,7 +28,6 @@ class User extends Authenticatable
             'password' => 'hashed',
             'role' => Role::class,
             'is_active' => 'boolean',
-            'is_regular' => 'boolean',
         ];
     }
 
@@ -41,16 +39,6 @@ class User extends Authenticatable
     public function avatarUrl(): ?string
     {
         return $this->avatar_media_id ? route('media.show', $this->avatar()->value('uuid')) : null;
-    }
-
-    /**
-     * Client habitué : marqué par l'admin, ou au moins une livraison déjà effectuée.
-     * Il peut commander par simple envoi de photos (demande rapide + chat).
-     */
-    public function isRegularClient(): bool
-    {
-        return $this->isClient()
-            && ($this->is_regular || $this->deliveries()->where('status', DeliveryStatus::Delivered)->exists());
     }
 
     public function deliveryRequests(): HasMany

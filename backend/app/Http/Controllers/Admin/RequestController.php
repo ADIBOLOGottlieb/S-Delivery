@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
-/** Demandes rapides des clients habitués : discussion puis programmation de la livraison. */
+/** Demandes rapides des clients : discussion puis programmation de la livraison. */
 class RequestController extends Controller
 {
     public function __construct(private readonly PushNotifier $push) {}

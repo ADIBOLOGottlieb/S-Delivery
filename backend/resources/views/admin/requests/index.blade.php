@@ -10,7 +10,7 @@
     <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
             <h1 class="text-2xl font-bold">Demandes rapides</h1>
-            <p class="text-sm text-gray-500">Clients habitués : photos des articles + discussion. Programmez la livraison depuis la discussion.</p>
+            <p class="text-sm text-gray-500">Programmation par photo : photos des articles + discussion. Programmez la livraison depuis la discussion.</p>
         </div>
         <nav class="flex gap-1 text-sm bg-white rounded-lg shadow-sm p-1">
             @foreach ($tabs as $key => $label)

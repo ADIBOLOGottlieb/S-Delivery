@@ -2,8 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Enums\DeliveryStatus;
-use App\Models\Delivery;
 use App\Models\DeliveryRequest;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -40,34 +38,18 @@ class RequestChatProfileTest extends TestCase
         $this->assertDatabaseCount('media', 0);
     }
 
-    public function test_new_client_cannot_use_quick_request(): void
+    public function test_any_client_can_use_photo_programming(): void
     {
         Sanctum::actingAs(User::factory()->create());
 
-        $this->getJson('/api/v1/me')->assertJsonPath('data.is_regular', false);
         $this->post('/api/v1/requests', ['photos' => [$this->photo()]], ['Accept' => 'application/json'])
-            ->assertUnprocessable();
-        $this->assertDatabaseCount('delivery_requests', 0);
+            ->assertCreated();
+        $this->assertDatabaseCount('delivery_requests', 1);
     }
 
-    public function test_client_becomes_regular_after_a_delivered_delivery(): void
+    public function test_client_sends_photos_chats_and_admin_schedules_delivery(): void
     {
         $client = User::factory()->create();
-        Delivery::forceCreate([
-            'client_id' => $client->id, 'type' => 'colis', 'status' => DeliveryStatus::Delivered,
-            'pickup_address' => 'Bè', 'pickup_lat' => 6.13, 'pickup_lng' => 1.24,
-            'dropoff_address' => 'Kégué', 'dropoff_lat' => 6.16, 'dropoff_lng' => 1.26,
-            'recipient_name' => 'Yao', 'recipient_phone' => '+22890000001',
-            'distance_km' => 4, 'delivery_fee' => 1000, 'total_amount' => 1000,
-        ]);
-
-        Sanctum::actingAs($client);
-        $this->getJson('/api/v1/me')->assertJsonPath('data.is_regular', true);
-    }
-
-    public function test_regular_client_sends_photos_chats_and_admin_schedules_delivery(): void
-    {
-        $client = User::factory()->create(['is_regular' => true]);
         $admin = User::factory()->admin()->create();
 
         // 1. Le client envoie ses articles en photos.
@@ -86,7 +68,7 @@ class RequestChatProfileTest extends TestCase
 
         // 3. L'agence répond puis programme la livraison.
         $this->actingAs($admin)->get('/admin/requests')->assertOk()->assertSee($client->name);
-        $this->get('/admin/clients')->assertOk()->assertSee('Habitué');
+        $this->get('/admin/clients')->assertOk()->assertDontSee('Habitué');
         $this->get("/admin/requests/{$requestId}")->assertOk()->assertSee('Programmer la livraison');
         $this->post("/admin/requests/{$requestId}/reply", ['body' => 'Ok, 1 500 FCFA'])->assertRedirect();
         $this->post("/admin/requests/{$requestId}/schedule", [
@@ -125,7 +107,7 @@ class RequestChatProfileTest extends TestCase
 
     public function test_photo_programming_needs_only_a_photo(): void
     {
-        Sanctum::actingAs(User::factory()->create(['is_regular' => true]));
+        Sanctum::actingAs(User::factory()->create());
         $headers = ['Accept' => 'application/json'];
 
         // Sans photo : refusé.
@@ -141,7 +123,7 @@ class RequestChatProfileTest extends TestCase
 
     public function test_client_cannot_read_another_clients_request(): void
     {
-        $owner = User::factory()->create(['is_regular' => true]);
+        $owner = User::factory()->create();
         $request = $owner->deliveryRequests()->create();
 
         Sanctum::actingAs(User::factory()->create());
@@ -162,16 +144,5 @@ class RequestChatProfileTest extends TestCase
         $this->post("/api/v1/deliveries/{$id}/photos", ['photo' => $this->photo()], ['Accept' => 'application/json'])
             ->assertOk()
             ->assertJsonCount(1, 'data.photos');
-    }
-
-    public function test_admin_can_mark_client_as_regular(): void
-    {
-        $client = User::factory()->create();
-
-        $this->actingAs(User::factory()->admin()->create())
-            ->post(route('admin.clients.regular', $client))
-            ->assertRedirect();
-
-        $this->assertTrue($client->refresh()->is_regular);
     }
 }

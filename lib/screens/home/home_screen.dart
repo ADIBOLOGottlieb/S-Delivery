@@ -45,7 +45,6 @@ class HomeScreenState extends State<HomeScreen> {
   Future<void> _refresh() async {
     final auth = context.read<AuthService>();
     setState(_load);
-    // Le statut « client habitué » peut avoir été accordé par l'agence entre-temps.
     await Future.wait([_recent.catchError((_) => <Delivery>[]), auth.refreshProfile()]);
   }
 

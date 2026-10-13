@@ -126,7 +126,7 @@ void main() {
     expect(d.requestId, 12);
   });
 
-  test('User.fromJson lit la photo de profil et le statut client habitué', () {
+  test('User.fromJson lit la photo de profil', () {
     final user = User.fromJson({
       'id': 3,
       'name': 'Ama Mensah',
@@ -135,13 +135,11 @@ void main() {
       'role': 'client',
       'vehicle': null,
       'avatar_url': 'https://api/media/x',
-      'is_regular': true,
     });
 
     expect(user.avatarUrl, 'https://api/media/x');
-    expect(user.isRegular, isTrue);
     expect(user.firstName, 'Ama');
-    expect(user.roleLabel, 'Client fidèle');
+    expect(user.roleLabel, 'Client');
     // Session enregistrée puis relue : les nouveaux champs survivent.
     expect(User.fromJson(user.toJson()).avatarUrl, user.avatarUrl);
   });

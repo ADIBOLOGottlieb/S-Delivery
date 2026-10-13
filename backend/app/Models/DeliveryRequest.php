@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
- * Demande rapide d'un client habitué : photos des articles + discussion avec l'agence,
+ * Demande rapide d'un client : photos des articles + discussion avec l'agence,
  * qui programme ensuite la livraison.
  */
 class DeliveryRequest extends Model

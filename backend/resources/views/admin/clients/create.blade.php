@@ -6,7 +6,7 @@
     <a href="{{ route('admin.clients.index') }}" class="text-gray-500">← Clients</a>
     <h1 class="text-2xl font-bold mt-2 mb-1">Ajouter un ancien client</h1>
     <p class="text-sm text-gray-600 mb-4 max-w-xl">
-        Le compte est créé « habitué » (programmation par photo disponible). Un mot de passe est généré :
+        Un mot de passe est généré :
         vous le transmettrez au client (WhatsApp en un clic à l'étape suivante). Il pourra le changer dans l'app.
     </p>
 

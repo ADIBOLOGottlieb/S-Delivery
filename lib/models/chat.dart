@@ -1,4 +1,4 @@
-/// Demande rapide (client habitué) : photos des articles + discussion avec l'agence.
+/// Demande rapide (programmation par photo) : photos des articles + discussion avec l'agence.
 class ChatRequest {
   final int id;
   final String reference;

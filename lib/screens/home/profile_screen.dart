@@ -143,18 +143,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(color: AppColors.secondary, borderRadius: BorderRadius.circular(12)),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (user?.isRegular ?? false) ...[
-                        const Icon(Icons.star_rounded, color: AppColors.primary, size: 16),
-                        const SizedBox(width: 4),
-                      ],
-                      Text(
-                        (user?.roleLabel ?? 'Client').toUpperCase(),
-                        style: textTheme.bodySmall?.copyWith(color: AppColors.primary, fontWeight: FontWeight.bold),
-                      ),
-                    ],
+                  child: Text(
+                    (user?.roleLabel ?? 'Client').toUpperCase(),
+                    style: textTheme.bodySmall?.copyWith(color: AppColors.primary, fontWeight: FontWeight.bold),
                   ),
                 ),
                 if (user?.vehicle != null) ...[

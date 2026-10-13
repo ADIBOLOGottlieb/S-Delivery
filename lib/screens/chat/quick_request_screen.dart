@@ -8,7 +8,7 @@ import '../../widgets/bottom_action_bar.dart';
 import '../../widgets/photos.dart';
 import 'chat_screen.dart';
 
-/// Programmation par photo (clients habitués) : une photo du colis suffit.
+/// Programmation par photo (tout client) : une photo du colis suffit.
 /// Pensé pour les commerçants qui lisent peu : gros boutons à icônes, aucun champ à remplir.
 /// L'agence complète quartier, numéro et montant dans la discussion.
 class QuickRequestScreen extends StatefulWidget {

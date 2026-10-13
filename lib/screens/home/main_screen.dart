@@ -19,7 +19,7 @@ class MainScreen extends StatefulWidget {
   static const tabProfile = 3;
 
   /// Démarre une commande : formulaire Plis & Colis, qui propose aussi
-  /// la « programmation par photo » (clients habitués) sous les types de livraison.
+  /// la « programmation par photo » sous les types de livraison.
   static Future<void> startDelivery(BuildContext context, {DeliveryType type = DeliveryType.colis}) async {
     final navigator = Navigator.of(context);
     final created = await navigator.push<Delivery>(

@@ -53,7 +53,7 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  /// Recharge le profil (ex. statut « client habitué » accordé par l'agence).
+  /// Recharge le profil (ex. modifié depuis le panneau admin).
   Future<void> refreshProfile() => _refreshProfile();
 
   /// Ajoute ou remplace la photo de profil. Lève [ApiException] en cas d'échec.

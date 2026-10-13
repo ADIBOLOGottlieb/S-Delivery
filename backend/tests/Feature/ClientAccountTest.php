@@ -46,7 +46,6 @@ class ClientAccountTest extends TestCase
             ->assertSee($password)->assertSee('wa.me/22890112233', false);
 
         $client = User::where('phone_number', '+22890112233')->firstOrFail();
-        $this->assertTrue($client->is_regular);
         $this->assertSame('Agoè', $client->district);
         $this->app['auth']->forgetGuards();
 
@@ -54,8 +53,7 @@ class ClientAccountTest extends TestCase
         foreach (['90112233', '+228 90 11 22 33', '22890112233'] as $login) {
             $this->postJson('/api/v1/login', ['login' => $login, 'password' => $password])
                 ->assertOk()
-                ->assertJsonPath('user.name', 'Ama Mensah')
-                ->assertJsonPath('user.is_regular', true);
+                ->assertJsonPath('user.name', 'Ama Mensah');
         }
 
         // Le même numéro ne peut pas se réinscrire : le client est renvoyé vers ses identifiants.

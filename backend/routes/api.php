@@ -41,7 +41,7 @@ Route::prefix('v1')->group(function () {
             Route::post('/deliveries/{delivery}/payment', [DeliveryController::class, 'submitPayment']);
             Route::post('/deliveries/{delivery}/photos', [DeliveryController::class, 'addPhoto'])->middleware('throttle:30,1');
 
-            // Demandes rapides (clients habitués) : photos + chat avec l'agence.
+            // Demandes rapides (tout client) : photos + chat avec l'agence.
             Route::get('/requests', [RequestController::class, 'index']);
             Route::post('/requests', [RequestController::class, 'store'])->middleware('throttle:10,1');
             Route::get('/requests/{deliveryRequest}', [RequestController::class, 'show']);

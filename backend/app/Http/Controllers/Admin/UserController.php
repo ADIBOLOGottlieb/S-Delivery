@@ -81,10 +81,7 @@ class UserController extends Controller
                 ->where('name', 'like', "%{$search}%")
                 ->orWhere('phone_number', 'like', "%{$search}%")
                 ->orWhere('email', 'like', "%{$search}%")))
-            ->withCount([
-                'deliveries',
-                'deliveries as delivered_count' => fn ($q) => $q->where('status', DeliveryStatus::Delivered),
-            ])
+            ->withCount('deliveries')
             ->with('avatar:id,uuid')
             ->latest()
             ->paginate(25)
@@ -103,18 +100,6 @@ class UserController extends Controller
         }
 
         return back()->with('success', $client->is_active ? 'Client réactivé.' : 'Client désactivé.');
-    }
-
-    /** Client habitué : peut commander par simple envoi de photos (demande rapide + chat). */
-    public function toggleRegular(User $client): RedirectResponse
-    {
-        abort_unless($client->isClient(), 404);
-
-        $client->update(['is_regular' => ! $client->is_regular]);
-
-        return back()->with('success', $client->is_regular
-            ? "{$client->name} peut maintenant commander par photos."
-            : "{$client->name} n'est plus marqué comme habitué.");
     }
 
     /** @return array<string, mixed> */
