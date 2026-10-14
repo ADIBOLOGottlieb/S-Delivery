@@ -200,7 +200,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: ListTile(
               leading: Icon(Icons.info_outline),
               title: Text('À propos'),
-              subtitle: Text('VOOM Delivery · Lomé, Togo · v1.0.0'),
+              subtitle: Text('VOOM Delivery · Lomé, Togo · v1.1.0'),
             ),
           ),
           const SizedBox(height: 24),
