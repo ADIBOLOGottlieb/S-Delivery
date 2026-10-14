@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../utils/colors.dart';
@@ -58,9 +60,59 @@ Future<String?> pickPhoto(BuildContext context, {VoidCallback? onRemove}) async 
   return file?.path;
 }
 
-Future<String?> pickPhotoFromCamera() async {
-  final file = await ImagePicker().pickImage(source: ImageSource.camera, maxWidth: 1280, maxHeight: 1280, imageQuality: 75);
+/// Photo d'un colis prise avec l'appareil photo.
+/// [keep] : photos déjà choisies, mises de côté au cas où Android ferme l'app pendant la prise de vue
+/// (fréquent sur les téléphones à petite mémoire) ; elles sont alors rendues par [PhotoDraft.recover].
+Future<String?> pickPhotoFromCamera({List<String> keep = const []}) async {
+  await PhotoDraft._save(keep);
+  final file = await ImagePicker().pickImage(
+    source: ImageSource.camera,
+    maxWidth: 1280,
+    maxHeight: 1280,
+    imageQuality: 75,
+    requestFullMetadata: false,
+  );
+  await PhotoDraft.clear();
   return file?.path;
+}
+
+/// Photos d'une demande en cours, conservées pendant que l'appareil photo est ouvert.
+///
+/// Sur Android, le système peut fermer l'app pour libérer de la mémoire pendant la prise de vue :
+/// elle redémarre alors sur l'accueil. [recover] rend les photos déjà prises et celle qui venait
+/// d'être prise (récupérée par ImagePicker.retrieveLostData), pour reprendre là où on en était.
+class PhotoDraft {
+  static const _storage = FlutterSecureStorage();
+  static const _key = 'photo_draft';
+
+  static Future<void> _save(List<String> paths) async {
+    try {
+      // Marqueur présent même sans photo : signale qu'une prise de vue de colis est en cours.
+      await _storage.write(key: _key, value: jsonEncode(paths));
+    } catch (_) {}
+  }
+
+  /// Photos à reprendre après un redémarrage forcé, ou liste vide.
+  static Future<List<String>> recover() async {
+    if (!Platform.isAndroid) return const [];
+    try {
+      final raw = await _storage.read(key: _key);
+      if (raw == null) return const [];
+      await clear();
+      final kept = (jsonDecode(raw) as List).cast<String>();
+      final lost = await ImagePicker().retrieveLostData();
+      final taken = lost.isEmpty ? const <String>[] : [for (final f in lost.files ?? const <XFile>[]) f.path];
+      return [...kept, ...taken].where((p) => File(p).existsSync()).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  static Future<void> clear() async {
+    try {
+      await _storage.delete(key: _key);
+    } catch (_) {}
+  }
 }
 
 /// Plusieurs photos de la galerie d'un coup (articles à livrer).

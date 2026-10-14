@@ -236,7 +236,8 @@ class CatalogPromoReminderTest extends TestCase
         $this->postJson('/api/v1/me/device-token', ['token' => 'device-abc'])->assertOk();
         $this->app['auth']->forgetGuards();
 
-        $d = $this->delivery(User::factory()->create(), ['type' => 'express']);
+        // Heure limite proche = urgent (l'Express a été retiré de l'app).
+        $d = $this->delivery(User::factory()->create(), ['deadline_at' => now()->addMinutes(35)->toIso8601String()]);
         $this->actingAs($admin)->post(route('admin.deliveries.confirm-payment', $d), ['method' => 'flooz']);
         $this->actingAs($admin)->post(route('admin.deliveries.assign', $d), ['courier_id' => $courier->id])->assertSessionHasNoErrors();
 
@@ -260,7 +261,7 @@ class CatalogPromoReminderTest extends TestCase
     {
         $admin = User::factory()->admin()->create();
         $courier = User::factory()->courier()->create(['fcm_token' => 'x']);
-        $d = $this->delivery(User::factory()->create(), ['type' => 'express']);
+        $d = $this->delivery(User::factory()->create());
         $this->actingAs($admin)->post(route('admin.deliveries.confirm-payment', $d), ['method' => 'flooz']);
 
         $this->actingAs($admin)->post(route('admin.deliveries.assign', $d), ['courier_id' => $courier->id])

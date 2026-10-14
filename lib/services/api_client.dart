@@ -133,11 +133,12 @@ class ApiClient {
       final errors = data['errors'];
       if (errors is Map<String, dynamic>) {
         errors.forEach((key, value) {
-          fieldErrors[key] = (value as List).map((e) => e.toString()).toList();
+          fieldErrors[key] = value is List ? value.map((e) => e.toString()).toList() : ['$value'];
         });
       }
       // Pour une erreur de validation, le premier message de champ est le plus parlant.
-      message = fieldErrors.values.firstOrNull?.firstOrNull ?? data['message'] as String?;
+      final raw = fieldErrors.values.firstOrNull?.firstOrNull ?? data['message'];
+      message = raw is String ? _readable(raw) : null;
     }
 
     message ??= switch (status) {
@@ -150,5 +151,24 @@ class ApiClient {
     };
 
     return ApiException(message, statusCode: status, fieldErrors: fieldErrors);
+  }
+
+  /// Messages par défaut de Laravel (en anglais) : remplacés par le message du code HTTP.
+  static const _laravelDefaults = {
+    'unauthenticated.',
+    'server error',
+    'not found',
+    'too many attempts.',
+    'this action is unauthorized.',
+    'forbidden',
+  };
+
+  /// Message affichable en français ; null pour retomber sur le message du code HTTP.
+  static String? _readable(String raw) {
+    final text = raw.trim();
+    if (text.isEmpty || _laravelDefaults.contains(text.toLowerCase())) return null;
+    // Message de validation Laravel non traduit (« The phone number field is required. »…).
+    if (text.startsWith('The ') || text.contains('field')) return 'Vérifiez les informations saisies.';
+    return text;
   }
 }

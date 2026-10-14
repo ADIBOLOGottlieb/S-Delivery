@@ -12,7 +12,10 @@ import 'chat_screen.dart';
 /// Pensé pour les commerçants qui lisent peu : gros boutons à icônes, aucun champ à remplir.
 /// L'agence complète quartier, numéro et montant dans la discussion.
 class QuickRequestScreen extends StatefulWidget {
-  const QuickRequestScreen({super.key});
+  /// Photos déjà prises (récupérées après un redémarrage forcé, ou venues du formulaire).
+  final List<String> initialPhotos;
+
+  const QuickRequestScreen({super.key, this.initialPhotos = const []});
 
   static const maxPhotos = 6;
 
@@ -21,13 +24,13 @@ class QuickRequestScreen extends StatefulWidget {
 }
 
 class _QuickRequestScreenState extends State<QuickRequestScreen> {
-  final _photos = <String>[];
+  late final _photos = [...widget.initialPhotos.take(QuickRequestScreen.maxPhotos)];
   bool _sending = false;
 
   int get _remaining => QuickRequestScreen.maxPhotos - _photos.length;
 
   Future<void> _camera() async {
-    final path = await pickPhotoFromCamera();
+    final path = await pickPhotoFromCamera(keep: _photos);
     if (mounted && path != null) setState(() => _photos.add(path));
   }
 

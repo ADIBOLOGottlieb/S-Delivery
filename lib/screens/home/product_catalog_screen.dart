@@ -25,14 +25,16 @@ enum ProductCategory {
   final IconData icon;
 }
 
-/// Onglet du catalogue : tout, les packs, ou une sous-catégorie nommée par l'admin.
+/// Onglet du catalogue : tout, une sous-catégorie nommée par l'admin,
+/// les « Autres produits » (sans famille, ex. œufs) ou les packs.
 class _Tab {
   final String label;
   final IconData icon;
   final int? subcategoryId;
+  final bool others;
   final bool packs;
 
-  const _Tab(this.label, this.icon, {this.subcategoryId, this.packs = false});
+  const _Tab(this.label, this.icon, {this.subcategoryId, this.others = false, this.packs = false});
 }
 
 /// Ouvre la fiche d'un produit puis, si le client commande, le formulaire de livraison.
@@ -88,14 +90,15 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
 
   Future<void> _loadTabs() async {
     try {
-      final (subs, hasPacks) = await context.read<DeliveryService>().subcategories(widget.category.value);
+      final tabs = await context.read<DeliveryService>().subcategories(widget.category.value);
       if (!mounted) return;
       setState(() {
-        // Sous-onglets nommés par l'admin, puis « Packs » en dernier.
+        // Sous-onglets nommés par l'admin, « Autres produits », puis « Packs » en dernier.
         _tabs = [
           const _Tab('Tout', Icons.apps),
-          for (final s in subs) _Tab(s.name, _iconFor(s.name), subcategoryId: s.id),
-          if (hasPacks) const _Tab('Packs', Icons.card_giftcard, packs: true),
+          for (final s in tabs.subcategories) _Tab(s.name, _iconFor(s.name), subcategoryId: s.id),
+          if (tabs.hasOthers) const _Tab('Autres produits', Icons.more_horiz_rounded, others: true),
+          if (tabs.hasPacks) const _Tab('Packs', Icons.card_giftcard, packs: true),
         ];
       });
     } catch (_) {
@@ -108,6 +111,7 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
     _products = context.read<DeliveryService>().products(
           category: widget.category.value,
           subcategoryId: tab.subcategoryId,
+          others: tab.others,
           type: tab.packs ? 'pack' : null,
           search: _search,
         );

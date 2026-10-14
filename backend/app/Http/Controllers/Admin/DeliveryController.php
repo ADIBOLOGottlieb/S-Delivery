@@ -13,14 +13,15 @@ use App\Services\DeliveryReminder;
 use App\Services\Payments\PaymentService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use Symfony\Component\HttpFoundation\Response;
 
 class DeliveryController extends Controller
 {
+    public function __construct(private readonly DeliveryReminder $notifier) {}
+
     public function dashboard(): View
     {
         return view('admin.dashboard', [
@@ -31,10 +32,11 @@ class DeliveryController extends Controller
             'deliveredToday' => Delivery::where('status', DeliveryStatus::Delivered)
                 ->whereDate('delivered_at', today())->count(),
             'activeCouriers' => User::couriers()->where('is_active', true)->count(),
-            'revenueMonth' => Delivery::where('payment_status', PaymentStatus::Verified)
-                ->where('status', '!=', DeliveryStatus::Cancelled)
-                ->whereBetween('created_at', [now()->startOfMonth(), now()])
-                ->sum('total_amount'),
+            // Frais de livraison réellement gagnés : courses livrées ce mois et payées (hors montant des articles).
+            'revenueMonth' => (int) Delivery::where('status', DeliveryStatus::Delivered)
+                ->where('payment_status', PaymentStatus::Verified)
+                ->whereBetween('delivered_at', [now()->startOfMonth(), now()])
+                ->sum('delivery_fee'),
             'latest' => Delivery::with(['client', 'courier'])->latest()->limit(8)->get(),
         ]);
     }
@@ -51,10 +53,16 @@ class DeliveryController extends Controller
             ->with(['client', 'courier'])
             ->when($filters['status'] ?? null, fn ($q, $s) => $q->where('status', $s))
             ->when($filters['payment_status'] ?? null, fn ($q, $s) => $q->where('payment_status', $s))
-            ->when($filters['search'] ?? null, fn ($q, $s) => $q->where(fn ($q) => $q
-                ->where('reference', 'like', "%{$s}%")
-                ->orWhere('recipient_phone', 'like', "%{$s}%")
-                ->orWhereHas('client', fn ($q) => $q->where('name', 'like', "%{$s}%")->orWhere('phone_number', 'like', "%{$s}%"))))
+            ->when($filters['search'] ?? null, function ($q, $s) {
+                // % et _ tapés par l'admin sont cherchés tels quels, pas comme jokers.
+                $like = '%'.addcslashes($s, '%_\\').'%';
+                $q->where(fn ($q) => $q
+                    ->whereRaw("reference like ? escape '\\'", [$like])
+                    ->orWhereRaw("recipient_phone like ? escape '\\'", [$like])
+                    ->orWhereHas('client', fn ($q) => $q
+                        ->whereRaw("name like ? escape '\\'", [$like])
+                        ->orWhereRaw("phone_number like ? escape '\\'", [$like])));
+            })
             ->latest()
             ->paginate(25)
             ->withQueryString();
@@ -80,8 +88,17 @@ class DeliveryController extends Controller
     {
         $data = $request->validate(['courier_id' => ['required', 'exists:users,id']]);
 
-        $delivery->assignTo(User::findOrFail($data['courier_id']));
-        app(DeliveryReminder::class)->notifyAssigned($delivery->load('courier'));
+        $before = $delivery->courier_id;
+        $previous = $delivery->assignTo(User::findOrFail($data['courier_id']));
+        $delivery->load('courier', 'client');
+
+        if ($before !== $delivery->courier_id) {
+            $this->notifier->notifyAssigned($delivery);
+            $this->notifier->notifyClient($delivery, 'assigned');
+        }
+        if ($previous) {
+            $this->notifier->notifyCourierRemoved($delivery, User::find($previous), 'unassigned');
+        }
 
         return back()->with('success', 'Livreur assigné.');
     }
@@ -95,6 +112,7 @@ class DeliveryController extends Controller
         ]);
 
         $payments->confirmByAdmin($delivery, $request->user(), PaymentMethod::from($data['method']), $data['reference'] ?? null);
+        $this->notifier->notifyClient($delivery->load('client'), 'payment_verified');
 
         return back()->with('success', 'Paiement validé. Vous pouvez assigner un livreur.');
     }
@@ -104,52 +122,49 @@ class DeliveryController extends Controller
         $data = $request->validate(['reason' => ['required', 'string', 'max:255']]);
 
         $delivery->cancel($data['reason']);
+        $delivery->load('client', 'courier');
 
-        return back()->with('success', 'Livraison annulée.');
+        $this->notifier->notifyClient($delivery, 'cancelled', $data['reason']);
+        $this->notifier->notifyCourierRemoved($delivery, $delivery->courier, 'cancelled');
+
+        return back()->with('success', $delivery->needsRefund()
+            ? 'Livraison annulée. Le client avait payé : remboursez-lui '.number_format($delivery->total_amount, 0, ',', ' ').' FCFA.'
+            : 'Livraison annulée.');
     }
 
-    public function approvePayment(Request $request, Payment $payment): RedirectResponse
+    public function approvePayment(Request $request, Payment $payment, PaymentService $payments): RedirectResponse
     {
-        abort_unless($payment->status === PaymentStatus::Submitted, 422, 'Ce paiement a déjà été traité.');
-        if ($payment->delivery->status === DeliveryStatus::Cancelled) {
-            return back()->withErrors(['payment' => 'Livraison annulée : le paiement ne peut pas être confirmé (rembourser le client si nécessaire).']);
-        }
-
-        DB::transaction(function () use ($request, $payment) {
-            $payment->forceFill([
-                'status' => PaymentStatus::Verified,
-                'reviewed_by' => $request->user()->id,
-                'reviewed_at' => now(),
-            ])->save();
-            $payment->delivery->forceFill(['payment_status' => PaymentStatus::Verified])->save();
-        });
+        $delivery = $payments->approve($payment, $request->user());
+        $this->notifier->notifyClient($delivery->load('client'), 'payment_verified');
 
         return back()->with('success', 'Paiement confirmé. Vous pouvez maintenant assigner un livreur.');
     }
 
-    public function rejectPayment(Request $request, Payment $payment): RedirectResponse
+    public function rejectPayment(Request $request, Payment $payment, PaymentService $payments): RedirectResponse
     {
-        abort_unless($payment->status === PaymentStatus::Submitted, 422, 'Ce paiement a déjà été traité.');
-
         $data = $request->validate(['rejection_reason' => ['required', 'string', 'max:255']]);
 
-        DB::transaction(function () use ($request, $payment, $data) {
-            $payment->forceFill([
-                'status' => PaymentStatus::Rejected,
-                'reviewed_by' => $request->user()->id,
-                'reviewed_at' => now(),
-                'rejection_reason' => $data['rejection_reason'],
-            ])->save();
-            $payment->delivery->forceFill(['payment_status' => PaymentStatus::Rejected])->save();
-        });
+        if (! $payments->reject($payment, $request->user(), $data['rejection_reason'])) {
+            return back()->with('success', 'Preuve refusée. Le statut de paiement de la livraison est inchangé.');
+        }
+
+        $this->notifier->notifyClient($payment->delivery()->with('client')->firstOrFail(), 'payment_rejected', $data['rejection_reason']);
 
         return back()->with('success', 'Paiement refusé. Le client peut renvoyer une preuve.');
     }
 
-    /** Capture d'écran stockée sur le disque privé : accessible uniquement aux admins. */
-    public function screenshot(Payment $payment): StreamedResponse
+    /** Capture de la transaction, réservée aux admins (en base ; anciens fichiers encore sur disque). */
+    public function screenshot(Payment $payment): Response
     {
-        abort_unless(Storage::disk('local')->exists($payment->screenshot_path), 404);
+        if ($payment->screenshot_media_id && $media = $payment->screenshot) {
+            return response($media->bytes(), 200, [
+                'Content-Type' => $media->mime,
+                'Cache-Control' => 'private, max-age=3600',
+                'X-Content-Type-Options' => 'nosniff',
+            ]);
+        }
+
+        abort_unless($payment->screenshot_path && Storage::disk('local')->exists($payment->screenshot_path), 404);
 
         return Storage::disk('local')->response($payment->screenshot_path);
     }

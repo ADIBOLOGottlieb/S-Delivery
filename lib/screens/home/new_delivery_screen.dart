@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
@@ -14,6 +15,7 @@ import '../../utils/formatters.dart';
 import '../../widgets/bottom_action_bar.dart';
 import '../../widgets/delivery_map.dart';
 import '../../widgets/photos.dart';
+import '../chat/chat_screen.dart';
 import '../chat/quick_request_screen.dart';
 import '../common/location_picker_screen.dart';
 
@@ -67,7 +69,12 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
   DateTime? _deadline;
   DeliveryQuote? _quote;
   bool _quoting = false;
+  bool _quoteFailed = false;
+  int _quoteSeq = 0;
   bool _submitting = false;
+
+  /// Position actuelle du client, posée d'office de son côté (départ s'il envoie, arrivée s'il reçoit).
+  Place? _here;
 
   /// Photos des articles à livrer (aident le livreur à reconnaître le colis).
   final _photos = <String>[];
@@ -84,6 +91,55 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
   void initState() {
     super.initState();
     _applyRole();
+    if (!_isOrder) _locateMe();
+  }
+
+  /// Comme Gozem : le point de l'utilisateur est rempli avec sa position, sans rien taper.
+  Future<void> _locateMe() async {
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) return;
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) return;
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, timeLimit: Duration(seconds: 12)),
+      );
+      final point = LatLng(pos.latitude, pos.longitude);
+      final place = await GeocodingService().reverse(point) ?? Place(point: point, label: 'Ma position');
+      if (!mounted) return;
+      setState(() {
+        _here = place;
+        _placeMine();
+      });
+      _refreshQuote();
+    } catch (_) {
+      // Sans position, le client choisit le point sur la carte.
+    }
+  }
+
+  /// Pose ma position de mon côté (si ce point est encore vide) et la retire de l'autre côté.
+  void _placeMine() {
+    final here = _here;
+    if (here == null || _isOrder) return;
+    if (_sending) {
+      if (_dropoff == here.point) {
+        _dropoff = null;
+        _dropoffAddress.clear();
+      }
+      if (_pickup == null) {
+        _pickup = here.point;
+        _pickupAddress.text = here.label;
+      }
+    } else {
+      if (_pickup == here.point) {
+        _pickup = null;
+        _pickupAddress.clear();
+      }
+      if (_dropoff == null) {
+        _dropoff = here.point;
+        _dropoffAddress.text = here.label;
+      }
+    }
   }
 
   @override
@@ -201,7 +257,12 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
   Future<void> _refreshQuote() async {
     // Pour une commande, le devis exact est calculé par le serveur à la création (adresse vendeur).
     if (_isOrder || _pickup == null || _dropoff == null) return;
-    setState(() => _quoting = true);
+    // Seule la dernière demande de prix compte (changements rapides de taille ou de moment).
+    final seq = ++_quoteSeq;
+    setState(() {
+      _quoting = true;
+      _quoteFailed = false;
+    });
     try {
       final quote = await context.read<DeliveryService>().quote(
             type: _type,
@@ -210,11 +271,16 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
             dropoffLat: _dropoff!.latitude,
             dropoffLng: _dropoff!.longitude,
           );
-      if (mounted) setState(() => _quote = quote);
+      if (mounted && seq == _quoteSeq) setState(() => _quote = quote);
     } on ApiException {
-      if (mounted) setState(() => _quote = null);
+      if (mounted && seq == _quoteSeq) {
+        setState(() {
+          _quote = null;
+          _quoteFailed = true;
+        });
+      }
     } finally {
-      if (mounted) setState(() => _quoting = false);
+      if (mounted && seq == _quoteSeq) setState(() => _quoting = false);
     }
   }
 
@@ -233,16 +299,83 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
       initialTime: TimeOfDay.fromDateTime(_scheduledAt ?? now.add(const Duration(hours: 1))),
       helpText: 'Heure de passage',
     );
-    if (time == null) return;
+    if (time == null || !mounted) return;
+    final chosen = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    if (chosen.isBefore(DateTime.now().add(const Duration(minutes: 10)))) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Choisissez une heure de passage au moins 10 minutes plus tard.'),
+        backgroundColor: AppColors.error,
+      ));
+      return;
+    }
     setState(() {
       _later = true;
-      _scheduledAt = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+      _scheduledAt = chosen;
     });
   }
 
   /// Programmation par photo : ouverte à tout client connecté, au même titre que le formulaire.
+  /// Les photos déjà jointes au formulaire sont reprises.
   void _openPhotoProgramming() {
-    Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const QuickRequestScreen()));
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => QuickRequestScreen(initialPhotos: List.of(_photos))),
+    );
+  }
+
+  /// Adresse inconnue mais photos jointes : on les envoie à l'agence, qui complète avec le client
+  /// dans la discussion (même circuit que la programmation par photo).
+  Future<void> _sendToAgency() async {
+    String? orNull(TextEditingController c) => c.text.trim().isEmpty ? null : c.text.trim();
+    final contact = [orNull(_recipientName), orNull(_recipientPhone)].whereType<String>().join(' · ');
+    final message = [
+      if (_pickup != null) 'Récupération : ${_pickupAddress.text.trim()}',
+      if (_dropoff != null) 'Livraison : ${_dropoffAddress.text.trim()}',
+      if (contact.isNotEmpty) 'Destinataire : $contact',
+      'Taille : ${_size.label}',
+      if (orNull(_description) != null) 'Contenu : ${orNull(_description)}',
+      if (orNull(_notes) != null) 'Instructions : ${orNull(_notes)}',
+    ].join('\n');
+
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _submitting = true);
+    try {
+      final request = await context.read<DeliveryService>().createChatRequest(photoPaths: _photos, message: message);
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => ChatScreen(requestId: request.id, initial: request)),
+      );
+    } on ApiException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message), backgroundColor: AppColors.error));
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  /// Adresse manquante : avec des photos, propose l'envoi à l'agence au lieu de bloquer.
+  Future<void> _missingAddress(String what) async {
+    if (_photos.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Indiquez $what. Vous ne la connaissez pas ? Utilisez « Programmation par photo ».'),
+        backgroundColor: AppColors.error,
+      ));
+      return;
+    }
+    final send = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.add_a_photo, color: AppColors.primaryDark, size: 36),
+        title: const Text('Adresse manquante'),
+        content: Text(
+          'Pour un prix immédiat, indiquez $what.\n\n'
+          "Sinon, envoyez vos photos à l'agence : elle vous contacte et complète l'adresse avec vous.",
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Compléter l'adresse")),
+          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text("Envoyer à l'agence")),
+        ],
+      ),
+    );
+    if (send == true && mounted) await _sendToAgency();
   }
 
   Future<void> _addPhotos() async {
@@ -273,7 +406,7 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
 
     final List<String> picked;
     if (fromCamera) {
-      final path = await pickPhotoFromCamera();
+      final path = await pickPhotoFromCamera(keep: _photos);
       picked = path == null ? const [] : [path];
     } else {
       picked = await pickPhotosFromGallery(limit: remaining);
@@ -285,10 +418,20 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
     final messenger = ScaffoldMessenger.of(context);
     void error(String msg) => messenger.showSnackBar(SnackBar(content: Text(msg), backgroundColor: AppColors.error));
 
-    if (!_isOrder && _pickup == null) return error('Indiquez où récupérer le colis.');
-    if (_dropoff == null) return error('Indiquez où livrer le colis.');
+    if (!_isOrder && _pickup == null) return _missingAddress('où récupérer le colis');
+    if (_dropoff == null) return _missingAddress('où livrer le colis');
     if (!_formKey.currentState!.validate()) return;
     if (_later && _scheduledAt == null) return error("Choisissez le jour et l'heure de passage.");
+    final now = DateTime.now();
+    if (_later && _scheduledAt!.isBefore(now.add(const Duration(minutes: 5)))) {
+      return error("L'heure de passage est dépassée : choisissez-en une nouvelle.");
+    }
+    if (_deadline != null && _deadline!.isBefore(now.add(const Duration(minutes: 30)))) {
+      return error("L'heure limite est trop proche : choisissez-la au moins 30 minutes plus tard.");
+    }
+    if (_later && _deadline != null && !_deadline!.isAfter(_scheduledAt!)) {
+      return error("L'heure limite doit être après l'heure de passage.");
+    }
 
     String? orNull(TextEditingController c) => c.text.trim().isEmpty ? null : c.text.trim();
     final details = orNull(_description);
@@ -355,200 +498,209 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
     final textTheme = Theme.of(context).textTheme;
     final otherSide = _sending || _isOrder;
 
-    return Scaffold(
-      appBar: AppBar(title: Text(_isOrder ? 'Commander' : 'Envoyer un colis')),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-          children: [
-            _RouteMap(pickup: _pickup, dropoff: _dropoff, fallback: _lome),
-            // Carte du trajet qui chevauche la carte, comme une feuille Gozem.
-            Transform.translate(
-              offset: const Offset(0, -28),
-              child: _Panel(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (product != null) ...[
-                      _OrderSummary(product: product, quantity: widget.quantity),
-                      const SizedBox(height: 14),
-                    ] else ...[
-                      _RoleSwitch(
-                        sending: _sending,
-                        onChanged: (v) => setState(() {
-                          _sending = v;
-                          _applyRole();
-                        }),
+    // Pas de retour pendant l'envoi (demande et photos) : la commande partirait sans suite.
+    return PopScope(
+      canPop: !_submitting,
+      child: Scaffold(
+        appBar: AppBar(title: Text(_isOrder ? 'Commander' : 'Envoyer un colis')),
+        body: Form(
+          key: _formKey,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            children: [
+              _RouteMap(pickup: _pickup, dropoff: _dropoff, fallback: _lome),
+              // Carte du trajet qui chevauche la carte, comme une feuille Gozem.
+              Transform.translate(
+                offset: const Offset(0, -28),
+                child: _Panel(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (product != null) ...[
+                        _OrderSummary(product: product, quantity: widget.quantity),
+                        const SizedBox(height: 14),
+                      ] else ...[
+                        _RoleSwitch(
+                          sending: _sending,
+                          onChanged: (v) {
+                            setState(() {
+                              _sending = v;
+                              _applyRole();
+                              _placeMine();
+                            });
+                            _refreshQuote();
+                          },
+                        ),
+                        const SizedBox(height: 14),
+                      ],
+                      _RouteStop(
+                        color: AppColors.success,
+                        square: false,
+                        label: 'Récupération',
+                        value: product != null
+                            ? (product.vendorName ?? product.pickupAddress)
+                            : (_pickup == null ? null : _pickupAddress.text),
+                        placeholder: 'Où récupérer le colis ?',
+                        onTap: product != null ? null : () => _pick(pickup: true),
+                        onEdit: product != null || _pickup == null ? null : () => _editLandmark(pickup: true),
                       ),
-                      const SizedBox(height: 14),
+                      const _RouteConnector(),
+                      _RouteStop(
+                        color: AppColors.error,
+                        square: true,
+                        label: 'Destination',
+                        value: _dropoff == null ? null : _dropoffAddress.text,
+                        placeholder: 'Où livrer le colis ?',
+                        onTap: () => _pick(pickup: false),
+                        onEdit: _dropoff == null ? null : () => _editLandmark(pickup: false),
+                      ),
                     ],
-                    _RouteStop(
-                      color: AppColors.success,
-                      square: false,
-                      label: 'Récupération',
-                      value: product != null
-                          ? (product.vendorName ?? product.pickupAddress)
-                          : (_pickup == null ? null : _pickupAddress.text),
-                      placeholder: 'Où récupérer le colis ?',
-                      onTap: product != null ? null : () => _pick(pickup: true),
-                      onEdit: product != null || _pickup == null ? null : () => _editLandmark(pickup: true),
-                    ),
-                    const _RouteConnector(),
-                    _RouteStop(
-                      color: AppColors.error,
-                      square: true,
-                      label: 'Destination',
-                      value: _dropoff == null ? null : _dropoffAddress.text,
-                      placeholder: 'Où livrer le colis ?',
-                      onTap: () => _pick(pickup: false),
-                      onEdit: _dropoff == null ? null : () => _editLandmark(pickup: false),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-            ),
-            // Personne à l'autre bout (l'utilisateur est pré-rempli de son côté).
-            _SectionLabel(otherSide ? 'Qui reçoit le colis ?' : 'Qui remet le colis ?'),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    key: ValueKey('name-$otherSide'),
-                    controller: otherSide ? _recipientName : _pickupName,
-                    textCapitalization: TextCapitalization.words,
-                    decoration: const InputDecoration(labelText: 'Nom', prefixIcon: Icon(Icons.person_outline)),
-                    validator: _required('Nom requis'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: TextFormField(
-                    key: ValueKey('phone-$otherSide'),
-                    controller: otherSide ? _recipientPhone : _pickupPhone,
-                    keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(labelText: 'Numéro', prefixIcon: Icon(Icons.phone_outlined)),
-                    validator: (v) => (v ?? '').replaceAll(RegExp(r'\D'), '').length < 8 ? 'Numéro invalide' : null,
-                  ),
-                ),
-              ],
-            ),
-            if (!_isOrder) ...[
-              const _SectionLabel('Taille du colis'),
+              // Personne à l'autre bout (l'utilisateur est pré-rempli de son côté).
+              _SectionLabel(otherSide ? 'Qui reçoit le colis ?' : 'Qui remet le colis ?'),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  for (final s in ParcelSize.values) ...[
-                    if (s != ParcelSize.values.first) const SizedBox(width: 10),
+                  Expanded(
+                    child: TextFormField(
+                      key: ValueKey('name-$otherSide'),
+                      controller: otherSide ? _recipientName : _pickupName,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: const InputDecoration(labelText: 'Nom', prefixIcon: Icon(Icons.person_outline)),
+                      validator: _required('Nom requis'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextFormField(
+                      key: ValueKey('phone-$otherSide'),
+                      controller: otherSide ? _recipientPhone : _pickupPhone,
+                      keyboardType: TextInputType.phone,
+                      decoration: const InputDecoration(labelText: 'Numéro', prefixIcon: Icon(Icons.phone_outlined)),
+                      validator: (v) => (v ?? '').replaceAll(RegExp(r'\D'), '').length < 8 ? 'Numéro invalide' : null,
+                    ),
+                  ),
+                ],
+              ),
+              if (!_isOrder) ...[
+                const _SectionLabel('Taille du colis'),
+                Row(
+                  children: [
+                    for (final s in ParcelSize.values) ...[
+                      if (s != ParcelSize.values.first) const SizedBox(width: 10),
+                      Expanded(
+                        child: _ChoiceTile(
+                          icon: s.icon,
+                          title: s.label,
+                          subtitle: s.hint,
+                          selected: _size == s,
+                          onTap: () {
+                            setState(() => _size = s);
+                            _refreshQuote();
+                          },
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const _SectionLabel('Quand ?'),
+                Row(
+                  children: [
                     Expanded(
                       child: _ChoiceTile(
-                        icon: s.icon,
-                        title: s.label,
-                        subtitle: s.hint,
-                        selected: _size == s,
+                        icon: Icons.bolt_rounded,
+                        title: 'Maintenant',
+                        subtitle: 'Dès que possible',
+                        selected: !_later,
                         onTap: () {
-                          setState(() => _size = s);
+                          setState(() => _later = false);
+                          _refreshQuote();
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _ChoiceTile(
+                        icon: Icons.event_rounded,
+                        title: 'Programmer',
+                        subtitle: _later && _scheduledAt != null ? formatDateTime(_scheduledAt!) : 'Jour et heure',
+                        selected: _later,
+                        onTap: () async {
+                          await _pickSchedule();
                           _refreshQuote();
                         },
                       ),
                     ),
                   ],
-                ],
+                ),
+                // Sous les programmations : commande par simple photo du colis (l'agence complète le reste).
+                const SizedBox(height: 12),
+                _PhotoProgrammingTile(onTap: _openPhotoProgramming),
+              ],
+              const _SectionLabel('Options'),
+              _OptionTile(
+                icon: Icons.alarm,
+                title: _deadline == null ? 'Heure limite de livraison' : 'À livrer avant ${formatDateTime(_deadline!)}',
+                subtitle:
+                    _deadline == null ? 'Facultatif · le livreur est alerté si elle approche' : 'Touchez pour modifier',
+                highlighted: _deadline != null,
+                onTap: _pickDeadline,
+                onClear: _deadline == null ? null : () => setState(() => _deadline = null),
               ),
-              const _SectionLabel('Quand ?'),
-              Row(
-                children: [
-                  Expanded(
-                    child: _ChoiceTile(
-                      icon: Icons.bolt_rounded,
-                      title: 'Maintenant',
-                      subtitle: 'Dès que possible',
-                      selected: !_later,
-                      onTap: () {
-                        setState(() => _later = false);
-                        _refreshQuote();
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _ChoiceTile(
-                      icon: Icons.event_rounded,
-                      title: 'Programmer',
-                      subtitle: _later && _scheduledAt != null ? formatDateTime(_scheduledAt!) : 'Jour et heure',
-                      selected: _later,
-                      onTap: () async {
-                        await _pickSchedule();
-                        _refreshQuote();
-                      },
-                    ),
-                  ),
-                ],
-              ),
-              // Sous les programmations : commande par simple photo du colis (l'agence complète le reste).
               const SizedBox(height: 12),
-              _PhotoProgrammingTile(onTap: _openPhotoProgramming),
-            ],
-            const _SectionLabel('Options'),
-            _OptionTile(
-              icon: Icons.alarm,
-              title: _deadline == null ? 'Heure limite de livraison' : 'À livrer avant ${formatDateTime(_deadline!)}',
-              subtitle: _deadline == null ? 'Facultatif · le livreur est alerté si elle approche' : 'Touchez pour modifier',
-              highlighted: _deadline != null,
-              onTap: _pickDeadline,
-              onClear: _deadline == null ? null : () => setState(() => _deadline = null),
-            ),
-            const SizedBox(height: 12),
-            if (!_isOrder) ...[
+              if (!_isOrder) ...[
+                TextFormField(
+                  controller: _description,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Que contient le colis ? (facultatif)',
+                    prefixIcon: Icon(Icons.inventory_2_outlined),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
               TextFormField(
-                controller: _description,
+                controller: _notes,
                 maxLines: 2,
                 decoration: const InputDecoration(
-                  labelText: 'Que contient le colis ? (facultatif)',
-                  prefixIcon: Icon(Icons.inventory_2_outlined),
+                  labelText: 'Instructions pour le livreur (facultatif)',
+                  prefixIcon: Icon(Icons.notes),
                 ),
               ),
-              const SizedBox(height: 12),
-            ],
-            TextFormField(
-              controller: _notes,
-              maxLines: 2,
-              decoration: const InputDecoration(
-                labelText: 'Instructions pour le livreur (facultatif)',
-                prefixIcon: Icon(Icons.notes),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  const Icon(Icons.photo_library_outlined, size: 20),
+                  const SizedBox(width: 8),
+                  Text('Photos des articles', style: textTheme.titleMedium),
+                  const Spacer(),
+                  Text('${_photos.length}/$_maxPhotos · facultatif', style: textTheme.bodySmall),
+                ],
               ),
-            ),
-            const SizedBox(height: 18),
-            Row(
-              children: [
-                const Icon(Icons.photo_library_outlined, size: 20),
-                const SizedBox(width: 8),
-                Text('Photos des articles', style: textTheme.titleMedium),
-                const Spacer(),
-                Text('${_photos.length}/$_maxPhotos · facultatif', style: textTheme.bodySmall),
-              ],
-            ),
-            const SizedBox(height: 10),
-            LocalPhotoGrid(
-              paths: _photos,
-              max: _maxPhotos,
-              onAdd: _addPhotos,
-              onRemove: (i) => setState(() => _photos.removeAt(i)),
+              const SizedBox(height: 10),
+              LocalPhotoGrid(
+                paths: _photos,
+                max: _maxPhotos,
+                onAdd: _addPhotos,
+                onRemove: (i) => setState(() => _photos.removeAt(i)),
+              ),
+            ],
+          ),
+        ),
+        // Prix et bouton toujours visibles, au-dessus de la barre de navigation du téléphone.
+        bottomNavigationBar: BottomActionBar(
+          summary: _isOrder
+              ? Text('Frais de livraison calculés selon la distance et ajoutés au total.', style: textTheme.bodySmall)
+              : _QuoteSummary(quote: _quote, loading: _quoting, failed: _quoteFailed, onRetry: _refreshQuote),
+          children: [
+            ElevatedButton(
+              onPressed: _submitting ? null : _submit,
+              child: _submitting ? const ButtonProgress() : Text(_isOrder ? 'Valider la commande' : 'Commander'),
             ),
           ],
         ),
-      ),
-      // Prix et bouton toujours visibles, au-dessus de la barre de navigation du téléphone.
-      bottomNavigationBar: BottomActionBar(
-        summary: _isOrder
-            ? Text('Frais de livraison calculés selon la distance et ajoutés au total.', style: textTheme.bodySmall)
-            : _QuoteSummary(quote: _quote, loading: _quoting),
-        children: [
-          ElevatedButton(
-            onPressed: _submitting ? null : _submit,
-            child: _submitting ? const ButtonProgress() : Text(_isOrder ? 'Valider la commande' : 'Commander'),
-          ),
-        ],
       ),
     );
   }
@@ -742,7 +894,8 @@ class _RouteStop extends StatelessWidget {
               ),
             ),
             if (onEdit != null)
-              IconButton(tooltip: 'Préciser le repère', onPressed: onEdit, icon: const Icon(Icons.edit_outlined, size: 20))
+              IconButton(
+                  tooltip: 'Préciser le repère', onPressed: onEdit, icon: const Icon(Icons.edit_outlined, size: 20))
             else if (onTap != null)
               const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary),
           ],
@@ -764,7 +917,8 @@ class _RouteConnector extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           for (var i = 0; i < 3; i++)
-            Container(width: 2, height: 4, margin: const EdgeInsets.symmetric(vertical: 1.5), color: AppColors.textHint),
+            Container(
+                width: 2, height: 4, margin: const EdgeInsets.symmetric(vertical: 1.5), color: AppColors.textHint),
         ],
       ),
     );
@@ -951,8 +1105,10 @@ class _PhotoProgrammingTile extends StatelessWidget {
 class _QuoteSummary extends StatelessWidget {
   final DeliveryQuote? quote;
   final bool loading;
+  final bool failed;
+  final VoidCallback onRetry;
 
-  const _QuoteSummary({required this.quote, required this.loading});
+  const _QuoteSummary({required this.quote, required this.loading, required this.failed, required this.onRetry});
 
   @override
   Widget build(BuildContext context) {
@@ -962,6 +1118,22 @@ class _QuoteSummary extends StatelessWidget {
         children: [
           if (loading)
             const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+          else if (failed)
+            Expanded(
+              child: InkWell(
+                onTap: onRetry,
+                child: Row(
+                  children: [
+                    const Icon(Icons.refresh_rounded, size: 20, color: AppColors.error),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text('Prix indisponible · toucher pour réessayer',
+                          maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodyMedium),
+                    ),
+                  ],
+                ),
+              ),
+            )
           else if (quote == null)
             Expanded(
               child: Text('Indiquez départ et destination pour le prix.',

@@ -7,6 +7,7 @@ import '../../utils/colors.dart';
 import '../../widgets/auth_layout.dart';
 import '../../widgets/voom_logo.dart';
 import '../splash_screen.dart';
+import 'forgot_password_screen.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -101,7 +102,16 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               validator: (value) => (value == null || value.isEmpty) ? 'Saisissez votre mot de passe' : null,
             ),
-            const SizedBox(height: 22),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => ForgotPasswordScreen(initialLogin: _loginController.text.trim()),
+                )),
+                child: const Text('Mot de passe oublié ?'),
+              ),
+            ),
+            const SizedBox(height: 6),
             Consumer<AuthService>(
               builder: (context, auth, _) => ElevatedButton(
                 onPressed: auth.isLoading ? null : _login,

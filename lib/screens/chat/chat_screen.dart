@@ -33,6 +33,13 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _sending = false;
   Timer? _poll;
 
+  /// Chargement en cours : pas de second appel en parallèle, mais un rechargement est mis en attente.
+  bool _loading = false;
+  bool _reloadQueued = false;
+
+  /// Messages pas encore acceptés par le serveur (envoi en cours ou échec, avec « Renvoyer »).
+  final List<_OutgoingMessage> _outbox = [];
+
   @override
   void initState() {
     super.initState();
@@ -51,9 +58,16 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _load() async {
+    if (_loading) {
+      // Une réponse plus récente est attendue (ex. message qui vient d'être envoyé).
+      _reloadQueued = true;
+      return;
+    }
+    _loading = true;
     try {
       final r = await context.read<DeliveryService>().chatRequest(widget.requestId);
-      if (mounted) {
+      // Réponse périmée : un rechargement plus récent a été demandé entre-temps.
+      if (mounted && !_reloadQueued) {
         setState(() {
           _request = r;
           _error = null;
@@ -61,20 +75,45 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     } on ApiException catch (e) {
       if (mounted && _request == null) setState(() => _error = e.message);
+    } catch (_) {
+      if (mounted && _request == null) setState(() => _error = 'Une erreur est survenue. Réessayez.');
+    } finally {
+      _loading = false;
+    }
+    if (_reloadQueued && mounted) {
+      _reloadQueued = false;
+      await _load();
     }
   }
 
-  Future<void> _send({String? body, String? photoPath, double? lat, double? lng}) async {
+  Future<void> _send(_OutgoingMessage message) async {
     final messenger = ScaffoldMessenger.of(context);
-    setState(() => _sending = true);
+    final service = context.read<DeliveryService>();
+    setState(() {
+      _sending = true;
+      message.failed = false;
+      if (!_outbox.contains(message)) _outbox.add(message);
+    });
     try {
-      await context
-          .read<DeliveryService>()
-          .sendChatMessage(widget.requestId, body: body, photoPath: photoPath, lat: lat, lng: lng);
-      if (lat == null && body != null) _input.clear();
+      await service.sendChatMessage(
+        widget.requestId,
+        body: message.body,
+        photoPath: message.photoPath,
+        lat: message.lat,
+        lng: message.lng,
+      );
+      if (!mounted) return;
+      // Bulle en attente gardée jusqu'à l'arrivée du message enregistré (pas de trou à l'écran).
       await _load();
-    } on ApiException catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(e.message), backgroundColor: AppColors.error));
+      if (!mounted) return;
+      setState(() => _outbox.remove(message));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => message.failed = true);
+      messenger.showSnackBar(SnackBar(
+        content: Text(e is ApiException ? e.message : "Message non envoyé. Touchez « Renvoyer » pour réessayer."),
+        backgroundColor: AppColors.error,
+      ));
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -82,7 +121,18 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _sendText() {
     final text = _input.text.trim();
-    if (text.isNotEmpty) _send(body: text);
+    if (text.isEmpty) return;
+    // Le texte est gardé dans la bulle en attente : rien n'est perdu si l'envoi échoue.
+    _input.clear();
+    _send(_OutgoingMessage(body: text));
+  }
+
+  void _discard(_OutgoingMessage message) {
+    setState(() => _outbox.remove(message));
+    // Texte non envoyé remis dans la zone de saisie, si elle est vide.
+    if (message.photoPath == null && message.lat == null && _input.text.isEmpty) {
+      _input.text = message.body ?? '';
+    }
   }
 
   Future<void> _attach() async {
@@ -105,12 +155,14 @@ class _ChatScreenState extends State<ChatScreen> {
 
     if (choice == 'photo') {
       final path = await pickPhoto(context);
-      if (path != null) await _send(photoPath: path);
+      if (path != null && mounted) await _send(_OutgoingMessage(photoPath: path));
     } else {
       final place = await Navigator.of(context).push<Place>(
         MaterialPageRoute(builder: (_) => const LocationPickerScreen(title: 'Partager une position')),
       );
-      if (place != null) await _send(body: place.label, lat: place.point.latitude, lng: place.point.longitude);
+      if (place != null && mounted) {
+        await _send(_OutgoingMessage(body: place.label, lat: place.point.latitude, lng: place.point.longitude));
+      }
     }
   }
 
@@ -161,13 +213,103 @@ class _ChatScreenState extends State<ChatScreen> {
                   child: ListView.builder(
                     reverse: true,
                     padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-                    itemCount: r.messages.length,
-                    itemBuilder: (context, i) => _Bubble(message: r.messages[r.messages.length - 1 - i]),
+                    itemCount: _outbox.length + r.messages.length,
+                    itemBuilder: (context, i) {
+                      // Liste inversée : les messages en attente sont tout en bas.
+                      if (i < _outbox.length) {
+                        final m = _outbox[_outbox.length - 1 - i];
+                        return _OutgoingBubble(
+                          message: m,
+                          onRetry: _sending ? null : () => _send(m),
+                          onDiscard: () => _discard(m),
+                        );
+                      }
+                      final j = i - _outbox.length;
+                      return _Bubble(message: r.messages[r.messages.length - 1 - j]);
+                    },
                   ),
                 ),
                 _Composer(controller: _input, sending: _sending, onAttach: _attach, onSend: _sendText),
               ],
             ),
+    );
+  }
+}
+
+/// Message du client pas encore accepté par le serveur.
+class _OutgoingMessage {
+  final String? body;
+  final String? photoPath;
+  final double? lat;
+  final double? lng;
+  bool failed = false;
+
+  _OutgoingMessage({this.body, this.photoPath, this.lat, this.lng});
+
+  String get preview => photoPath != null
+      ? '📷 Photo'
+      : lat != null
+          ? '📍 ${body ?? 'Position'}'
+          : (body ?? '');
+}
+
+/// Bulle d'un message en cours d'envoi, ou non envoyé avec « Renvoyer ».
+class _OutgoingBubble extends StatelessWidget {
+  final _OutgoingMessage message;
+  final VoidCallback? onRetry;
+  final VoidCallback onDiscard;
+
+  const _OutgoingBubble({required this.message, required this.onRetry, required this.onDiscard});
+
+  @override
+  Widget build(BuildContext context) {
+    final failed = message.failed;
+    return Align(
+      alignment: Alignment.centerRight,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.78),
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 3),
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 4),
+          decoration: BoxDecoration(
+            color: AppColors.primary.withValues(alpha: failed ? 0.35 : 0.6),
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(18),
+              topRight: Radius.circular(18),
+              bottomLeft: Radius.circular(18),
+              bottomRight: Radius.circular(4),
+            ),
+            border: failed ? Border.all(color: AppColors.error) : null,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(message.preview, style: const TextStyle(fontSize: 15)),
+              ),
+              if (failed)
+                Wrap(
+                  alignment: WrapAlignment.end,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    const Icon(Icons.error_outline, size: 16, color: AppColors.error),
+                    const SizedBox(width: 4),
+                    const Text('Non envoyé', style: TextStyle(fontSize: 12, color: AppColors.error)),
+                    TextButton(onPressed: onRetry, child: const Text('Renvoyer')),
+                    TextButton(onPressed: onDiscard, child: const Text('Supprimer')),
+                  ],
+                )
+              else
+                const Padding(
+                  padding: EdgeInsets.only(top: 4, bottom: 4),
+                  child: Text('Envoi…', style: TextStyle(fontSize: 10.5, color: AppColors.textSecondary)),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

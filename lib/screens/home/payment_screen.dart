@@ -30,7 +30,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   final _refController = TextEditingController();
   late final _phoneController = TextEditingController(text: context.read<AuthService>().user?.phoneNumber);
 
-  late final Future<PaymentInfo> _info = context.read<DeliveryService>().paymentInfo();
+  late Future<PaymentInfo> _info = context.read<DeliveryService>().paymentInfo();
   String? _method;
   XFile? _screenshot;
   bool _sending = false;
@@ -45,9 +45,18 @@ class _PaymentScreenState extends State<PaymentScreen> {
   void _error(String msg) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: AppColors.error));
 
+  /// Moyens de paiement non chargés (réseau) : nouvel essai.
+  void _retryInfo() => setState(() => _info = context.read<DeliveryService>().paymentInfo());
+
   Future<void> _pickScreenshot() async {
-    final file = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1600, imageQuality: 85);
-    if (file != null) setState(() => _screenshot = file);
+    final XFile? file;
+    try {
+      file = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1600, imageQuality: 85);
+    } catch (_) {
+      if (mounted) _error("Impossible d'ouvrir la galerie. Vérifiez les autorisations de l'application.");
+      return;
+    }
+    if (file != null && mounted) setState(() => _screenshot = file);
   }
 
   Future<void> _submit() async {
@@ -72,7 +81,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
       ));
       Navigator.of(context).pop(updated);
     } on ApiException catch (e) {
-      _error(e.message);
+      if (mounted) _error(e.message);
+    } catch (_) {
+      if (mounted) _error("La preuve n'a pas pu être envoyée. Réessayez.");
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -89,7 +100,28 @@ class _PaymentScreenState extends State<PaymentScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return Center(child: Text(snapshot.error.toString(), style: const TextStyle(color: AppColors.error)));
+            final error = snapshot.error;
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.cloud_off, size: 48, color: AppColors.textHint),
+                    const SizedBox(height: 12),
+                    Text(
+                      error is ApiException
+                          ? error.message
+                          : 'Impossible de charger les moyens de paiement. Vérifiez votre connexion.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: AppColors.error),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton(onPressed: _retryInfo, child: const Text('Réessayer')),
+                  ],
+                ),
+              ),
+            );
           }
           final info = snapshot.data!;
           if (info.methods.isEmpty) {

@@ -18,7 +18,8 @@ use Illuminate\View\View;
  */
 class ClientAccountController extends Controller
 {
-    private const MAX_IMPORT_ROWS = 2000;
+    /** Au-delà, la requête dépasse le délai de Render (un mot de passe haché par client). */
+    private const MAX_IMPORT_ROWS = 300;
 
     public function create(): View
     {
@@ -65,11 +66,16 @@ class ClientAccountController extends Controller
             throw ValidationException::withMessages(['file' => 'Fichier vide ou illisible. Colonnes attendues : nom ; téléphone ; quartier.']);
         }
 
+        if (count($rows) > self::MAX_IMPORT_ROWS) {
+            throw ValidationException::withMessages(['file' => 'Le fichier contient '.count($rows).' lignes : '
+                .self::MAX_IMPORT_ROWS.' clients maximum par import. Découpez-le en plusieurs fichiers et importez-les un par un.']);
+        }
+
         $existing = User::pluck('phone_number')->map(fn ($p) => Phone::normalize((string) $p))->flip();
         $created = [];
         $skipped = [];
 
-        foreach (array_slice($rows, 0, self::MAX_IMPORT_ROWS, true) as $line => $row) {
+        foreach ($rows as $line => $row) {
             $name = trim($row['name']);
             $raw = trim($row['phone']);
             $label = $name !== '' ? $name : "Ligne $line";

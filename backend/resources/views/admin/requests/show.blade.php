@@ -10,6 +10,7 @@
     @php
         $client = $request->client;
         $money = fn ($v) => number_format($v, 0, ',', ' ').' FCFA';
+        $canSchedule = $request->canBeScheduled();
     @endphp
 
     <div class="flex flex-wrap items-center gap-3 mb-4">
@@ -49,12 +50,12 @@
                                 @if ($m->lat !== null)
                                     <div class="text-sm">
                                         📍 <a class="underline" target="_blank" href="https://www.google.com/maps/search/?api=1&query={{ $m->lat }},{{ $m->lng }}">Position partagée</a>
-                                        @unless ($request->delivery_id)
+                                        @if ($canSchedule)
                                             <span class="ml-2 whitespace-nowrap">
                                                 <button type="button" class="text-xs bg-green-600 text-white rounded px-2 py-0.5" onclick="voomSetPoint('pickup', {{ $m->lat }}, {{ $m->lng }})">→ A</button>
                                                 <button type="button" class="text-xs bg-red-600 text-white rounded px-2 py-0.5" onclick="voomSetPoint('dropoff', {{ $m->lat }}, {{ $m->lng }})">→ B</button>
                                             </span>
-                                        @endunless
+                                        @endif
                                     </div>
                                 @endif
                                 @if ($m->body)
@@ -95,11 +96,16 @@
                     </div>
                     <p class="text-sm text-gray-600 mt-3">{{ $d->pickup_address }} → {{ $d->dropoff_address }}</p>
                     <p class="font-semibold mt-1">{{ $money($d->total_amount) }}</p>
-                    <p class="text-xs text-gray-500 mt-3">Validez le paiement puis assignez un livreur depuis la fiche de la livraison.</p>
+                    @if ($d->status === \App\Enums\DeliveryStatus::Cancelled)
+                        <p class="text-sm text-red-700 mt-3">Cette livraison a été annulée{{ $d->cancel_reason ? ' ('.$d->cancel_reason.')' : '' }}. Vous pouvez en programmer une nouvelle ci-dessous.</p>
+                    @else
+                        <p class="text-xs text-gray-500 mt-3">Validez le paiement puis assignez un livreur depuis la fiche de la livraison.</p>
+                    @endif
                 </section>
-            @else
+            @endif
+            @if ($canSchedule)
                 <section class="bg-white rounded-lg shadow-sm p-5">
-                    <h2 class="font-semibold mb-1">Programmer la livraison</h2>
+                    <h2 class="font-semibold mb-1">{{ $request->delivery ? 'Reprogrammer la livraison' : 'Programmer la livraison' }}</h2>
                     <p class="text-xs text-gray-500 mb-4">Le client envoie seulement la photo du colis : complétez ici le quartier (point B), le numéro du destinataire et le montant, à partir de la photo ou en l'appelant. Les photos de la discussion seront jointes à la livraison.</p>
 
                     <form method="POST" action="{{ route('admin.requests.schedule', $request) }}" id="schedule-form" class="space-y-4 text-sm">
@@ -169,7 +175,7 @@
                 </section>
             @endif
 
-            @if ($request->status === \App\Models\DeliveryRequest::OPEN)
+            @if ($request->status === \App\Models\DeliveryRequest::OPEN && ! $request->hasActiveDelivery())
                 <form method="POST" action="{{ route('admin.requests.close', $request) }}"
                       onsubmit="return confirm('Clôturer cette demande sans livraison ?')">
                     @csrf

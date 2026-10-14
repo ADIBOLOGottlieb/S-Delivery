@@ -4,7 +4,7 @@
 
 @section('content')
     @php
-        $tabs = ['open' => 'En discussion', 'scheduled' => 'Programmées', 'closed' => 'Clôturées', 'all' => 'Toutes'];
+        $tabs = ['active' => 'À suivre', 'open' => 'En discussion', 'scheduled' => 'Programmées', 'closed' => 'Clôturées', 'all' => 'Toutes'];
     @endphp
 
     <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -32,7 +32,7 @@
                         <span class="{{ $unread ? 'font-bold' : 'font-medium' }}">{{ $req->client->name }}</span>
                         <span class="text-xs text-gray-400 font-mono">{{ $req->reference() }}</span>
                         @if ($req->delivery)
-                            <span class="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-800">{{ $req->delivery->reference }}</span>
+                            <span class="text-xs px-2 py-0.5 rounded-full {{ $req->delivery->status->badgeClass() }}">{{ $req->delivery->reference }} · {{ $req->delivery->status->label() }}</span>
                         @endif
                     </div>
                     <p class="text-sm truncate {{ $unread ? 'text-gray-900' : 'text-gray-500' }}">

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../models/delivery.dart';
 import '../../utils/colors.dart';
+import '../../widgets/photos.dart';
+import '../chat/quick_request_screen.dart';
 import 'delivery_detail_screen.dart';
 import 'home_screen.dart';
 import 'new_delivery_screen.dart';
@@ -38,6 +40,26 @@ class _MainScreenState extends State<MainScreen> {
   int _currentIndex = MainScreen.tabHome;
   final _homeKey = GlobalKey<HomeScreenState>();
   final _trackingKey = GlobalKey<PlisColisScreenState>();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _resumePhotos());
+  }
+
+  /// Android a fermé l'app pendant une prise de vue : on rouvre l'envoi par photo avec les photos déjà prises.
+  Future<void> _resumePhotos() async {
+    final photos = await PhotoDraft.recover();
+    if (photos.isEmpty || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text("Le téléphone a fermé l'application pendant la photo : vos photos ont été gardées."),
+    ));
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => QuickRequestScreen(initialPhotos: photos)),
+    );
+    if (!mounted) return;
+    _trackingKey.currentState?.reload();
+  }
 
   void _goTo(int index) {
     setState(() => _currentIndex = index);

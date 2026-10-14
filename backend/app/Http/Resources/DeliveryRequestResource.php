@@ -15,7 +15,10 @@ class DeliveryRequestResource extends JsonResource
             'reference' => $this->reference(),
             'status' => $this->status,
             'status_label' => $this->statusLabel(),
-            'unread' => $this->unreadForClient(),
+            // Compté en une requête pour une liste (withUnreadForClient), sinon à la demande.
+            'unread' => array_key_exists('unread_count', $this->resource->getAttributes())
+                ? (int) $this->resource->getAttribute('unread_count')
+                : $this->unreadForClient(),
             'district' => $this->district,
             'recipient_phone' => $this->recipient_phone,
             'parcel_amount' => $this->parcel_amount,

@@ -23,6 +23,8 @@ class Setting extends Model
         'merchant_name' => 'VOOM Delivery',
         'flooz_merchant_number' => '',
         'mixx_merchant_number' => '',
+        // Numéro appelé par « Contacter l'agence » dans l'app.
+        'support_phone' => '',
         'payment_instructions' => "Envoyez le montant exact au numéro marchand, puis joignez la capture d'écran de la transaction.",
         'base_fee' => '500',
         'per_km_fee' => '150',

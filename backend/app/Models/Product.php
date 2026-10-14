@@ -2,17 +2,17 @@
 
 namespace App\Models;
 
+use App\Support\StoredImage;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Support\Facades\Storage;
 
 /** Produit de la marketplace, ou pack (type = pack) composé de plusieurs produits. */
 #[Fillable([
     'category', 'subcategory_id', 'type', 'name', 'description', 'price', 'unit', 'image_path',
-    'vendor_name', 'pickup_address', 'pickup_lat', 'pickup_lng', 'is_active',
+    'vendor_name', 'vendor_phone', 'pickup_address', 'pickup_lat', 'pickup_lng', 'is_active',
 ])]
 class Product extends Model
 {
@@ -51,18 +51,12 @@ class Product extends Model
     }
 
     /**
-     * Photo du produit : envoyée par l'admin (disque public), ou photo du catalogue de départ
-     * livrée avec l'application (public/images/catalog, préfixe « catalog/ ») qui survit aux redéploiements.
+     * Photo du produit : envoyée par l'admin (stockée en base), ou photo du catalogue de départ
+     * livrée avec l'application (public/images/catalog, préfixe « catalog/ »).
      */
     public function imageUrl(): ?string
     {
-        if (! $this->image_path) {
-            return null;
-        }
-
-        return str_starts_with($this->image_path, 'catalog/')
-            ? asset('images/'.$this->image_path)
-            : Storage::disk('public')->url($this->image_path);
+        return StoredImage::url($this->image_path);
     }
 
     public function hasUploadedImage(): bool

@@ -5,10 +5,11 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\Subcategory;
+use App\Support\Phone;
+use App\Support\StoredImage;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -23,8 +24,10 @@ class ProductController extends Controller
     {
         $type = $request->query('type');
         $subcategoryId = $request->integer('subcategory') ?: null;
+        // « Autres produits » : produits sans famille, regroupés dans leur propre onglet.
+        $others = $request->query('subcategory') === 'others';
 
-        // Sous-onglets identiques à l'app : Tout, les sous-catégories, puis Packs.
+        // Sous-onglets identiques à l'app : Tout, les sous-catégories, Autres produits, puis Packs.
         $subcategories = Subcategory::where('category', self::CATEGORY)
             ->withCount('products')
             ->orderBy('position')
@@ -35,13 +38,15 @@ class ProductController extends Controller
             ->where('category', self::CATEGORY)
             ->when($type === 'pack', fn ($q) => $q->where('type', 'pack'))
             ->when($subcategoryId, fn ($q, $id) => $q->where('subcategory_id', $id)->where('type', 'product'))
+            ->when($others, fn ($q) => $q->whereNull('subcategory_id')->where('type', 'product'))
             ->latest()
             ->paginate(24)
             ->withQueryString();
 
         $packsCount = Product::where('category', self::CATEGORY)->where('type', 'pack')->count();
+        $othersCount = Product::where('category', self::CATEGORY)->where('type', 'product')->whereNull('subcategory_id')->count();
 
-        return view('admin.products.index', compact('products', 'type', 'subcategories', 'subcategoryId', 'packsCount'));
+        return view('admin.products.index', compact('products', 'type', 'subcategories', 'subcategoryId', 'others', 'packsCount', 'othersCount'));
     }
 
     public function create(Request $request): View
@@ -60,7 +65,7 @@ class ProductController extends Controller
     {
         [$data, $items] = $this->validated($request);
         if ($request->hasFile('image')) {
-            $data['image_path'] = $request->file('image')->store('products', 'public');
+            $data['image_path'] = StoredImage::store($request->file('image'));
         }
 
         DB::transaction(function () use ($data, $items) {
@@ -80,10 +85,8 @@ class ProductController extends Controller
     {
         [$data, $items] = $this->validated($request, $product);
         if ($request->hasFile('image')) {
-            if ($product->image_path) {
-                Storage::disk('public')->delete($product->image_path);
-            }
-            $data['image_path'] = $request->file('image')->store('products', 'public');
+            StoredImage::delete($product->image_path);
+            $data['image_path'] = StoredImage::store($request->file('image'));
         }
 
         DB::transaction(function () use ($product, $data, $items) {
@@ -103,9 +106,7 @@ class ProductController extends Controller
             return back()->with('success', 'Déjà commandé : désactivé au lieu d\'être supprimé.');
         }
 
-        if ($product->image_path) {
-            Storage::disk('public')->delete($product->image_path);
-        }
+        StoredImage::delete($product->image_path);
         $product->delete();
 
         return back()->with('success', 'Supprimé.');
@@ -133,6 +134,7 @@ class ProductController extends Controller
             'price' => ['required', 'integer', 'min:0'],
             'unit' => ['nullable', 'string', 'max:30'],
             'vendor_name' => ['nullable', 'string', 'max:255'],
+            'vendor_phone' => ['nullable', 'string', 'max:30'],
             'pickup_address' => ['required', 'string', 'max:255'],
             'pickup_lat' => ['required', 'numeric', 'between:-90,90'],
             'pickup_lng' => ['required', 'numeric', 'between:-180,180'],
@@ -152,6 +154,12 @@ class ProductController extends Controller
         }
 
         unset($data['image'], $data['items']);
+        if (! empty($data['vendor_phone'])) {
+            if (! Phone::isValid($data['vendor_phone'])) {
+                throw ValidationException::withMessages(['vendor_phone' => 'Numéro du vendeur invalide.']);
+            }
+            $data['vendor_phone'] = Phone::normalize($data['vendor_phone']);
+        }
 
         return [[...$data, 'is_active' => $request->boolean('is_active')], $items];
     }

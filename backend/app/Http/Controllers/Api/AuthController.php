@@ -10,11 +10,25 @@ use App\Support\Phone;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
+    private const MAX_LOGIN_ATTEMPTS = 5;
+
+    private const LOGIN_LOCK_SECONDS = 15 * 60;
+
+    /** Même clé pour toutes les écritures d'un numéro (ou d'un email). */
+    private static function loginThrottleKey(string $login): string
+    {
+        $login = trim($login);
+        $identifier = str_contains($login, '@') ? mb_strtolower($login) : Phone::normalize($login);
+
+        return 'login:'.sha1($identifier);
+    }
+
     /** Inscription publique : uniquement des comptes clients. Les livreurs sont créés par l'admin. */
     public function register(Request $request): JsonResponse
     {
@@ -49,6 +63,15 @@ class AuthController extends Controller
             'password' => ['required', 'string'],
         ]);
 
+        // Échecs comptés par compte visé (en plus du throttle par IP) : bloque le test de mots de passe.
+        $key = self::loginThrottleKey($data['login']);
+        if (RateLimiter::tooManyAttempts($key, self::MAX_LOGIN_ATTEMPTS)) {
+            $minutes = (int) ceil(RateLimiter::availableIn($key) / 60);
+            throw ValidationException::withMessages([
+                'login' => "Trop de tentatives de connexion. Réessayez dans {$minutes} minute".($minutes > 1 ? 's' : '').'.',
+            ])->status(429);
+        }
+
         // Le numéro est accepté sous toutes ses écritures (90 11 22 33, 22890112233, +228…).
         $user = User::query()
             ->where('email', $data['login'])
@@ -56,8 +79,10 @@ class AuthController extends Controller
             ->first();
 
         if (! $user || ! Hash::check($data['password'], $user->password)) {
+            RateLimiter::hit($key, self::LOGIN_LOCK_SECONDS);
             throw ValidationException::withMessages(['login' => 'Identifiants incorrects.']);
         }
+        RateLimiter::clear($key);
 
         if (! $user->is_active) {
             throw ValidationException::withMessages(['login' => "Ce compte a été désactivé. Contactez l'agence."]);

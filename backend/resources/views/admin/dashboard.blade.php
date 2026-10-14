@@ -12,7 +12,7 @@
             ['En cours', $inProgress, route('admin.deliveries.index', ['status' => 'assigned']), 'border-blue-400'],
             ['Livrées aujourd\'hui', $deliveredToday, route('admin.deliveries.index', ['status' => 'delivered']), 'border-green-500'],
             ['Livreurs actifs', $activeCouriers, route('admin.couriers.index'), 'border-gray-400'],
-            ['Encaissé ce mois', number_format($revenueMonth, 0, ',', ' ').' F', route('admin.deliveries.index', ['payment_status' => 'verified']), 'border-black'],
+            ['Frais livrés ce mois', number_format($revenueMonth, 0, ',', ' ').' F', route('admin.deliveries.index', ['status' => 'delivered', 'payment_status' => 'verified']), 'border-black'],
         ];
     @endphp
 

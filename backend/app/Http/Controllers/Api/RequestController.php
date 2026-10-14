@@ -25,6 +25,7 @@ class RequestController extends Controller
     {
         $requests = $request->user()->deliveryRequests()
             ->with(['latestMessage.media', 'delivery'])
+            ->withUnreadForClient()
             ->orderByDesc('last_message_at')
             ->paginate(30);
 

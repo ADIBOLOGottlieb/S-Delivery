@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/auth_service.dart';
+import '../services/push_service.dart';
 import '../utils/colors.dart';
 import '../widgets/voom_logo.dart';
 import 'auth/login_screen.dart';
@@ -43,10 +44,13 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     final auth = context.read<AuthService>();
     // Attend à la fois la restauration de session et une durée minimale d'animation.
     await Future.wait([auth.init(), Future.delayed(const Duration(milliseconds: 1800))]);
-    if (!mounted) return;
+    // Session expirée pendant le démarrage : SessionGuard a déjà affiché la connexion.
+    if (!mounted) return PushService.markAppReady();
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => SplashScreen.homeFor(auth)),
     );
+    // Notification touchée pour lancer l'app : ouverte par-dessus l'accueil.
+    PushService.markAppReady();
   }
 
   @override

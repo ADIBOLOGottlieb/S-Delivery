@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/delivery.dart';
 import '../../services/api_client.dart';
 import '../../services/delivery_service.dart';
+import '../../services/push_service.dart';
 import '../../utils/colors.dart';
 import '../../utils/formatters.dart';
 import '../../utils/launchers.dart';
@@ -27,11 +30,22 @@ class _CourierDeliveryScreenState extends State<CourierDeliveryScreen> {
   Delivery? _delivery;
   String? _error;
   bool _updating = false;
+  StreamSubscription<int>? _pushes;
 
   @override
   void initState() {
     super.initState();
     _load();
+    // Course modifiée par l'agence (notification reçue) : rafraîchissement immédiat.
+    _pushes = PushService.deliveryUpdates.listen((id) {
+      if (id == widget.deliveryId) _load();
+    });
+  }
+
+  @override
+  void dispose() {
+    _pushes?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -44,7 +58,10 @@ class _CourierDeliveryScreenState extends State<CourierDeliveryScreen> {
         });
       }
     } on ApiException catch (e) {
-      if (mounted) setState(() => _error = e.message);
+      // Une relecture ratée ne masque pas la course déjà affichée.
+      if (mounted && _delivery == null) setState(() => _error = e.message);
+    } catch (_) {
+      if (mounted && _delivery == null) setState(() => _error = 'Une erreur est survenue. Réessayez.');
     }
   }
 
@@ -150,15 +167,36 @@ class _CourierDeliveryScreenState extends State<CourierDeliveryScreen> {
                                 style: const TextStyle(fontWeight: FontWeight.w600)),
                           ],
                           const Divider(height: 24),
-                          Row(children: [
-                            const Icon(Icons.verified, color: AppColors.success, size: 20),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Payé en ligne (${formatFcfa(d.totalAmount)}). Rien à encaisser auprès du client.',
+                          if (d.parcelAmount != null)
+                            // Colis à payer à la livraison : montant à récupérer auprès du destinataire.
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: AppColors.warning.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: AppColors.warning),
                               ),
-                            ),
-                          ]),
+                              child: Row(children: [
+                                const Icon(Icons.payments_outlined, color: AppColors.warning, size: 22),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'À encaisser auprès du destinataire : ${formatFcfa(d.parcelAmount!)}',
+                                    style: const TextStyle(fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                              ]),
+                            )
+                          else
+                            Row(children: [
+                              const Icon(Icons.verified, color: AppColors.success, size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Payé en ligne (${formatFcfa(d.totalAmount)}). Rien à encaisser auprès du client.',
+                                ),
+                              ),
+                            ]),
                         ],
                       ),
                     ),

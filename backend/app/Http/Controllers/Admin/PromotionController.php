@@ -8,7 +8,7 @@ use App\Models\Promotion;
 use App\Services\PushNotifier;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
+use App\Support\StoredImage;
 use Illuminate\View\View;
 
 /** Annonces promotionnelles : bandeaux dans l'app + notification push aux clients. */
@@ -43,8 +43,8 @@ class PromotionController extends Controller
     public function update(Request $request, Promotion $promotion): RedirectResponse
     {
         $data = $this->validated($request);
-        if (isset($data['image_path']) && $promotion->image_path) {
-            Storage::disk('public')->delete($promotion->image_path);
+        if (isset($data['image_path'])) {
+            StoredImage::delete($promotion->image_path);
         }
         $promotion->update($data);
 
@@ -54,9 +54,7 @@ class PromotionController extends Controller
 
     public function destroy(Promotion $promotion): RedirectResponse
     {
-        if ($promotion->image_path) {
-            Storage::disk('public')->delete($promotion->image_path);
-        }
+        StoredImage::delete($promotion->image_path);
         $promotion->delete();
 
         return back()->with('success', 'Annonce supprimée.');
@@ -108,7 +106,7 @@ class PromotionController extends Controller
         ]);
 
         if ($request->hasFile('image')) {
-            $data['image_path'] = $request->file('image')->store('promotions', 'public');
+            $data['image_path'] = StoredImage::store($request->file('image'));
         }
         unset($data['image']);
 

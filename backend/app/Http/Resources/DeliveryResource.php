@@ -24,8 +24,9 @@ class DeliveryResource extends JsonResource
                 'address' => $this->pickup_address,
                 'lat' => $this->pickup_lat,
                 'lng' => $this->pickup_lng,
-                'contact_name' => $this->pickup_contact_name ?? $this->client?->name,
-                'contact_phone' => $this->pickup_contact_phone ?? $this->client?->phone_number,
+                // Commande de produit : le contact du point A est le vendeur, jamais le client (null si inconnu).
+                'contact_name' => $this->pickup_contact_name ?? ($this->product_id ? null : $this->client?->name),
+                'contact_phone' => $this->pickup_contact_phone ?? ($this->product_id ? null : $this->client?->phone_number),
             ],
             'dropoff' => [
                 'address' => $this->dropoff_address,
@@ -44,6 +45,8 @@ class DeliveryResource extends JsonResource
             'quantity' => $this->quantity,
             'photos' => $this->whenLoaded('photos', fn () => $this->photos->map(fn ($m) => $m->url())->values()),
             'request_id' => $this->whenLoaded('deliveryRequest', fn () => $this->deliveryRequest?->id),
+            // Demande photo : montant à encaisser auprès du destinataire.
+            'parcel_amount' => $this->deliveryRequest?->parcel_amount,
             'scheduled_at' => $this->scheduled_at?->toIso8601String(),
             'deadline_at' => $this->deadline_at?->toIso8601String(),
             'is_urgent' => \App\Services\DeliveryReminder::isUrgent($this->resource),

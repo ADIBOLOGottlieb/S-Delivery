@@ -34,7 +34,12 @@
                 </td>
                 <td class="px-4 py-2 text-right whitespace-nowrap">{{ number_format($delivery->total_amount, 0, ',', ' ') }} F</td>
                 <td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full text-xs whitespace-nowrap {{ $delivery->status->badgeClass() }}">{{ $delivery->status->label() }}</span></td>
-                <td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full text-xs whitespace-nowrap {{ $delivery->payment_status->badgeClass() }}">{{ $delivery->payment_status->label() }}</span></td>
+                <td class="px-4 py-2">
+                    <span class="px-2 py-0.5 rounded-full text-xs whitespace-nowrap {{ $delivery->payment_status->badgeClass() }}">{{ $delivery->payment_status->label() }}</span>
+                    @if ($delivery->needsRefund())
+                        <div class="mt-1"><span class="px-2 py-0.5 rounded-full text-xs whitespace-nowrap bg-red-600 text-white">À rembourser</span></div>
+                    @endif
+                </td>
                 <td class="px-4 py-2">{{ $delivery->courier?->name ?? '—' }}</td>
                 <td class="px-4 py-2 whitespace-nowrap text-gray-500">{{ $delivery->created_at->format('d/m H:i') }}</td>
             </tr>

@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\CatalogController;
 use App\Http\Controllers\Api\CourierDeliveryController;
 use App\Http\Controllers\Api\CronController;
 use App\Http\Controllers\Api\DeliveryController;
+use App\Http\Controllers\Api\PasswordResetController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\RequestController;
 use Illuminate\Support\Facades\Route;
@@ -14,6 +15,10 @@ Route::prefix('v1')->group(function () {
         Route::post('/register', [AuthController::class, 'register']);
         Route::post('/login', [AuthController::class, 'login']);
     });
+
+    // Mot de passe oublié : code envoyé par email, sans passer par l'agence.
+    Route::post('/password/forgot', [PasswordResetController::class, 'forgot'])->middleware('throttle:5,10');
+    Route::post('/password/reset', [PasswordResetController::class, 'reset'])->middleware('throttle:10,10');
 
     // Tâches périodiques (rappels livreurs), protégées par X-Cron-Key.
     Route::post('/cron/run', CronController::class)->middleware('throttle:30,1');

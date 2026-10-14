@@ -5,7 +5,9 @@ import '../../models/delivery.dart';
 import '../../models/product.dart';
 import '../../services/auth_service.dart';
 import '../../services/delivery_service.dart';
+import '../../services/paged_api.dart';
 import '../../utils/colors.dart';
+import '../../widgets/paged_loader.dart';
 import '../../widgets/promo_carousel.dart';
 import '../../widgets/skeleton.dart';
 import '../../widgets/user_avatar.dart';
@@ -26,7 +28,8 @@ class HomeScreen extends StatefulWidget {
 }
 
 class HomeScreenState extends State<HomeScreen> {
-  late Future<List<Delivery>> _recent;
+  // Livraisons récentes : les anciennes restent affichées pendant le rechargement.
+  late final _recent = PagedLoader<Delivery>((page) => context.read<PagedApi>().myDeliveries(page: page));
   late Future<List<Promotion>> _promos;
 
   @override
@@ -35,8 +38,14 @@ class HomeScreenState extends State<HomeScreen> {
     _load();
   }
 
+  @override
+  void dispose() {
+    _recent.dispose();
+    super.dispose();
+  }
+
   void _load() {
-    _recent = context.read<DeliveryService>().myDeliveries();
+    _recent.refresh();
     _promos = context.read<DeliveryService>().promotions().catchError((_) => <Promotion>[]);
   }
 
@@ -45,7 +54,7 @@ class HomeScreenState extends State<HomeScreen> {
   Future<void> _refresh() async {
     final auth = context.read<AuthService>();
     setState(_load);
-    await Future.wait([_recent.catchError((_) => <Delivery>[]), auth.refreshProfile()]);
+    await Future.wait([_recent.refresh(), auth.refreshProfile()]);
   }
 
   Future<void> _newDelivery(DeliveryType type) async {
@@ -181,19 +190,24 @@ class HomeScreenState extends State<HomeScreen> {
                 ],
               ),
               const SizedBox(height: 8),
-              FutureBuilder<List<Delivery>>(
-                future: _recent,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState != ConnectionState.done) {
+              ListenableBuilder(
+                listenable: _recent,
+                builder: (context, _) {
+                  final all = _recent.items;
+                  if (all == null) {
+                    // Erreur réseau : message + « Réessayer » (et non « Aucune livraison »).
+                    if (_recent.error != null && !_recent.loading) {
+                      return StaleDataBanner(message: _recent.errorMessage, onRetry: _recent.refresh);
+                    }
                     return const Padding(
                       padding: EdgeInsets.all(24),
                       child: Center(child: CircularProgressIndicator()),
                     );
                   }
-                  if (snapshot.hasError) {
-                    return Text(snapshot.error.toString(), style: const TextStyle(color: AppColors.error));
+                  final items = all.take(3).toList();
+                  if (items.isEmpty && _recent.error != null) {
+                    return StaleDataBanner(message: _recent.errorMessage, onRetry: _recent.refresh);
                   }
-                  final items = snapshot.data!.take(3).toList();
                   if (items.isEmpty) {
                     return Card(
                       child: Padding(
@@ -217,7 +231,7 @@ class HomeScreenState extends State<HomeScreen> {
                             await Navigator.of(context).push(
                               MaterialPageRoute(builder: (_) => DeliveryDetailScreen(deliveryId: d.id)),
                             );
-                            if (mounted) setState(_load);
+                            if (mounted) _recent.refresh();
                           },
                         ),
                     ],

@@ -110,7 +110,11 @@ class _CredentialsScreenState extends State<CredentialsScreen> {
             TextFormField(
               controller: _email,
               keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(labelText: 'Email (facultatif)', prefixIcon: Icon(Icons.email_outlined)),
+              decoration: const InputDecoration(
+                labelText: 'Email (facultatif)',
+                helperText: 'Permet de récupérer votre compte en cas de mot de passe oublié',
+                prefixIcon: Icon(Icons.email_outlined),
+              ),
               validator: (v) {
                 final value = (v ?? '').trim();
                 if (value.isEmpty) return null;

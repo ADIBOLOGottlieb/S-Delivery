@@ -1,20 +1,53 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/delivery.dart';
 import '../../services/auth_service.dart';
-import '../../services/delivery_service.dart';
+import '../../services/paged_api.dart';
+import '../../services/push_service.dart';
 import '../../utils/colors.dart';
 import '../../utils/formatters.dart';
 import '../../widgets/deadline_chip.dart';
+import '../../widgets/paged_loader.dart';
 import '../../widgets/status_chip.dart';
 import '../../widgets/voom_logo.dart';
 import '../home/profile_screen.dart';
 import 'courier_delivery_screen.dart';
 
 /// Espace livreur : livraisons assignées par l'admin.
-class CourierHomeScreen extends StatelessWidget {
+class CourierHomeScreen extends StatefulWidget {
   const CourierHomeScreen({super.key});
+
+  @override
+  State<CourierHomeScreen> createState() => _CourierHomeScreenState();
+}
+
+class _CourierHomeScreenState extends State<CourierHomeScreen> {
+  late final PagedApi _api = context.read<PagedApi>();
+  late final _todo = PagedLoader<Delivery>((page) => _api.courierDeliveries(page: page));
+  late final _history = PagedLoader<Delivery>((page) => _api.courierDeliveries(history: true, page: page));
+
+  @override
+  void initState() {
+    super.initState();
+    _todo.refresh();
+    _history.refresh();
+  }
+
+  @override
+  void dispose() {
+    _todo.dispose();
+    _history.dispose();
+    super.dispose();
+  }
+
+  /// Retour d'une course : son statut a pu changer, elle peut passer d'un onglet à l'autre.
+  void _reloadAll() {
+    _todo.refresh();
+    _history.refresh();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -51,23 +84,29 @@ class CourierHomeScreen extends StatelessWidget {
             tabs: [Tab(text: 'À faire'), Tab(text: 'Historique')],
           ),
         ),
-        body: const TabBarView(children: [_CourierList(history: false), _CourierList(history: true)]),
+        body: TabBarView(children: [
+          _CourierList(loader: _todo, history: false, onReturn: _reloadAll),
+          _CourierList(loader: _history, history: true, onReturn: _reloadAll),
+        ]),
       ),
     );
   }
 }
 
 class _CourierList extends StatefulWidget {
+  final PagedLoader<Delivery> loader;
   final bool history;
+  final VoidCallback onReturn;
 
-  const _CourierList({required this.history});
+  const _CourierList({required this.loader, required this.history, required this.onReturn});
 
   @override
   State<_CourierList> createState() => _CourierListState();
 }
 
 class _CourierListState extends State<_CourierList> with AutomaticKeepAliveClientMixin {
-  late Future<List<Delivery>> _future;
+  Timer? _poll;
+  StreamSubscription<int>? _pushes;
 
   @override
   bool get wantKeepAlive => true;
@@ -75,41 +114,60 @@ class _CourierListState extends State<_CourierList> with AutomaticKeepAliveClien
   @override
   void initState() {
     super.initState();
-    _load();
+    if (!widget.history) {
+      // Nouvelles courses assignées par l'agence : « À faire » se met à jour toute seule.
+      _poll = Timer.periodic(const Duration(seconds: 30), (_) {
+        if (_visible) widget.loader.refresh();
+      });
+      _pushes = PushService.deliveryUpdates.listen((_) => widget.loader.refresh());
+    }
   }
 
-  void _load() => _future = context.read<DeliveryService>().courierDeliveries(history: widget.history);
+  /// Onglet affiché, écran au premier plan et application ouverte.
+  bool get _visible {
+    if (!mounted) return false;
+    final route = ModalRoute.of(context);
+    final tabs = DefaultTabController.maybeOf(context);
+    return (route?.isCurrent ?? true) &&
+        (tabs == null || tabs.index == 0) &&
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+  }
 
-  Future<void> _refresh() async {
-    setState(_load);
-    await _future.catchError((_) => <Delivery>[]);
+  @override
+  void dispose() {
+    _poll?.cancel();
+    _pushes?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _open(Delivery d) async {
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => CourierDeliveryScreen(deliveryId: d.id)));
+    if (mounted) widget.onReturn();
   }
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    final loader = widget.loader;
     return RefreshIndicator(
-      onRefresh: _refresh,
-      child: FutureBuilder<List<Delivery>>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
+      onRefresh: loader.refresh,
+      child: ListenableBuilder(
+        listenable: loader,
+        builder: (context, _) {
+          final items = loader.items;
+          if (items == null) {
+            if (loader.error != null && !loader.loading) {
+              return ErrorRetryView(message: loader.errorMessage, onRetry: loader.refresh);
+            }
             return const Center(child: CircularProgressIndicator());
           }
-          if (snapshot.hasError) {
-            return ListView(children: [
-              Padding(
-                padding: const EdgeInsets.all(32),
-                child: Column(children: [
-                  Text(snapshot.error.toString(), textAlign: TextAlign.center),
-                  TextButton(onPressed: () => setState(_load), child: const Text('Réessayer')),
-                ]),
-              ),
-            ]);
-          }
-          final items = snapshot.data!;
           if (items.isEmpty) {
             return ListView(children: [
+              if (loader.error != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  child: StaleDataBanner(message: loader.errorMessage, onRetry: loader.refresh),
+                ),
               Padding(
                 padding: const EdgeInsets.all(48),
                 child: Column(children: [
@@ -125,18 +183,13 @@ class _CourierListState extends State<_CourierList> with AutomaticKeepAliveClien
               ),
             ]);
           }
-          return ListView.builder(
+          return ListView(
             padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MediaQuery.paddingOf(context).bottom),
-            itemCount: items.length,
-            itemBuilder: (context, i) => _CourierCard(
-              delivery: items[i],
-              onTap: () async {
-                await Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => CourierDeliveryScreen(deliveryId: items[i].id)),
-                );
-                if (mounted) setState(_load);
-              },
-            ),
+            children: [
+              if (loader.error != null) StaleDataBanner(message: loader.errorMessage, onRetry: loader.refresh),
+              for (final d in items) _CourierCard(delivery: d, onTap: () => _open(d)),
+              LoadMoreFooter(loader: loader),
+            ],
           );
         },
       ),

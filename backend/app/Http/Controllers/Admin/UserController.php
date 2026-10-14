@@ -6,10 +6,12 @@ use App\Enums\DeliveryStatus;
 use App\Enums\Role;
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Support\Phone;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 /** Gestion des comptes livreurs (créés uniquement par l'admin) et consultation des clients. */
@@ -61,6 +63,17 @@ class UserController extends Controller
             unset($data['password']);
         }
 
+        // Pas de désactivation tant que des colis sont entre ses mains : ils seraient bloqués.
+        if ($courier->is_active && ! $data['is_active']) {
+            $active = $courier->assignedDeliveries()
+                ->whereIn('status', [DeliveryStatus::Assigned, DeliveryStatus::PickedUp])->count();
+            if ($active > 0) {
+                throw ValidationException::withMessages([
+                    'is_active' => "Ce livreur a {$active} course(s) en cours : réassignez-les à un autre livreur (ou attendez la livraison) avant de le désactiver.",
+                ]);
+            }
+        }
+
         $courier->update($data);
 
         if (! $courier->is_active) {
@@ -77,10 +90,14 @@ class UserController extends Controller
 
         $clients = User::query()
             ->where('role', Role::Client)
-            ->when($search, fn ($q) => $q->where(fn ($q) => $q
-                ->where('name', 'like', "%{$search}%")
-                ->orWhere('phone_number', 'like', "%{$search}%")
-                ->orWhere('email', 'like', "%{$search}%")))
+            ->when($search, function ($q) use ($search) {
+                // % et _ tapés par l'admin sont cherchés tels quels, pas comme jokers.
+                $like = '%'.addcslashes($search, '%_\\').'%';
+                $q->where(fn ($q) => $q
+                    ->whereRaw("name like ? escape '\\'", [$like])
+                    ->orWhereRaw("phone_number like ? escape '\\'", [$like])
+                    ->orWhereRaw("email like ? escape '\\'", [$like]));
+            })
             ->withCount('deliveries')
             ->with('avatar:id,uuid')
             ->latest()
@@ -108,10 +125,19 @@ class UserController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['nullable', 'email', 'max:255', Rule::unique('users')->ignore($courier)],
-            'phone_number' => ['required', 'string', 'max:30', Rule::unique('users')->ignore($courier)],
+            'phone_number' => ['required', 'string', 'max:30'],
             'vehicle' => ['nullable', 'string', 'max:255'],
             'password' => [$courier ? 'nullable' : 'required', 'confirmed', Password::min(8)],
         ]);
+
+        // Une seule écriture du numéro (identifiant de connexion), unique sous toutes ses formes.
+        $data['phone_number'] = Phone::normalize($data['phone_number']);
+        $taken = User::whereIn('phone_number', Phone::variants($data['phone_number']))
+            ->when($courier, fn ($q) => $q->whereKeyNot($courier->id))
+            ->exists();
+        if ($taken) {
+            throw ValidationException::withMessages(['phone_number' => 'Ce numéro est déjà utilisé par un autre compte.']);
+        }
 
         return [...$data, 'is_active' => $request->boolean('is_active')];
     }

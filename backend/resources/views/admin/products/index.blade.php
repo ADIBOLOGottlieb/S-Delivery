@@ -19,14 +19,17 @@
         </div>
     </div>
 
-    {{-- Sous-onglets : Tout, sous-catégories (ordre de l'app), Packs en dernier. --}}
+    {{-- Sous-onglets : Tout, sous-catégories (ordre de l'app), Autres produits, Packs en dernier. --}}
     <nav class="flex gap-2 overflow-x-auto pb-2 mb-4">
-        <a href="{{ route('admin.products.index') }}" class="{{ $tab(! $subcategoryId && $type !== 'pack') }}">Tout</a>
+        <a href="{{ route('admin.products.index') }}" class="{{ $tab(! $subcategoryId && ! $others && $type !== 'pack') }}">Tout</a>
         @foreach ($subcategories as $sub)
             <a href="{{ route('admin.products.index', ['subcategory' => $sub->id]) }}" class="{{ $tab($subcategoryId === $sub->id) }}">
                 {{ $sub->name }} <span class="opacity-60">({{ $sub->products_count }})</span>
             </a>
         @endforeach
+        <a href="{{ route('admin.products.index', ['subcategory' => 'others']) }}" class="{{ $tab($others) }}" title="Produits sans famille (ex. œufs)">
+            Autres produits <span class="opacity-60">({{ $othersCount }})</span>
+        </a>
         <a href="{{ route('admin.products.index', ['type' => 'pack']) }}" class="{{ $tab($type === 'pack') }}">
             Packs <span class="opacity-60">({{ $packsCount }})</span>
         </a>
@@ -42,7 +45,7 @@
                 @endif
                 <div class="p-4">
                     <div class="text-xs text-gray-500">
-                        {{ $product->isPack() ? 'Packs' : ($product->subcategory?->name ?? 'Sans sous-catégorie') }}
+                        {{ $product->isPack() ? 'Packs' : ($product->subcategory?->name ?? 'Autres produits') }}
                         · {{ $product->vendor_name ?? 'VOOM' }}
                     </div>
                     <div class="font-semibold">

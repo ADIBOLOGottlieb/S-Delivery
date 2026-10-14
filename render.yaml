@@ -22,6 +22,22 @@ services:
         value: https://voom-delivery-api.onrender.com
       - key: APP_LOCALE
         value: fr
+      # Emails (code « mot de passe oublié ») : SMTP gratuit, ex. Brevo (300 emails/jour).
+      # Renseigner MAIL_USERNAME / MAIL_PASSWORD / MAIL_FROM_ADDRESS dans le tableau de bord Render.
+      - key: MAIL_MAILER
+        value: smtp
+      - key: MAIL_HOST
+        value: smtp-relay.brevo.com
+      - key: MAIL_PORT
+        value: "587"
+      - key: MAIL_USERNAME
+        sync: false
+      - key: MAIL_PASSWORD
+        sync: false
+      - key: MAIL_FROM_ADDRESS
+        sync: false
+      - key: MAIL_FROM_NAME
+        value: VOOM Delivery
       - key: LOG_CHANNEL
         value: stderr
       - key: DB_CONNECTION

@@ -30,6 +30,10 @@
                 </div>
             </div>
             <div>
+                <label class="block text-sm font-medium mb-1">Numéro de l'agence <span class="text-gray-500 font-normal">(bouton « Contacter l'agence » de l'app)</span></label>
+                <input name="support_phone" value="{{ old('support_phone', $settings['support_phone']) }}" placeholder="+228 90 00 00 00" class="w-full border rounded px-3 py-2">
+            </div>
+            <div>
                 <label class="block text-sm font-medium mb-1">Instructions affichées au client</label>
                 <textarea name="payment_instructions" rows="3" class="w-full border rounded px-3 py-2">{{ old('payment_instructions', $settings['payment_instructions']) }}</textarea>
             </div>

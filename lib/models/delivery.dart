@@ -52,15 +52,23 @@ class DeliveryPoint {
         address: json['address'] as String,
         lat: (json['lat'] as num).toDouble(),
         lng: (json['lng'] as num).toDouble(),
-        contactName: json['contact_name'] as String?,
-        contactPhone: json['contact_phone'] as String?,
+        contactName: _text(json['contact_name']),
+        contactPhone: _text(json['contact_phone']),
       );
+
+  /// Contact absent ou vide (ex. commande produit sans téléphone vendeur) : null, pas de bouton « Appeler » cassé.
+  static String? _text(dynamic value) {
+    final text = (value as String?)?.trim();
+    return text == null || text.isEmpty ? null : text;
+  }
 }
 
 class PaymentProof {
   final String method;
   final String methodLabel;
-  final String transactionRef;
+
+  /// Absente pour un paiement passé par une passerelle (ou pas encore renseignée).
+  final String? transactionRef;
   final int amount;
   final String status;
   final String statusLabel;
@@ -69,7 +77,7 @@ class PaymentProof {
   const PaymentProof({
     required this.method,
     required this.methodLabel,
-    required this.transactionRef,
+    this.transactionRef,
     required this.amount,
     required this.status,
     required this.statusLabel,
@@ -77,12 +85,12 @@ class PaymentProof {
   });
 
   factory PaymentProof.fromJson(Map<String, dynamic> json) => PaymentProof(
-        method: json['method'] as String,
-        methodLabel: json['method_label'] as String,
-        transactionRef: json['transaction_ref'] as String,
-        amount: json['amount'] as int,
-        status: json['status'] as String,
-        statusLabel: json['status_label'] as String,
+        method: json['method'] as String? ?? '',
+        methodLabel: json['method_label'] as String? ?? '',
+        transactionRef: json['transaction_ref'] as String?,
+        amount: (json['amount'] as num?)?.toInt() ?? 0,
+        status: json['status'] as String? ?? PaymentStatus.submitted,
+        statusLabel: json['status_label'] as String? ?? '',
         rejectionReason: json['rejection_reason'] as String?,
       );
 }
@@ -96,7 +104,7 @@ class Person {
 
   static Person? fromJson(dynamic json) => json is Map<String, dynamic>
       ? Person(
-          name: json['name'] as String,
+          name: json['name'] as String? ?? '',
           phoneNumber: json['phone_number'] as String?,
           vehicle: json['vehicle'] as String?,
         )
@@ -126,6 +134,9 @@ class Delivery {
   final int deliveryFee;
   final int itemsAmount;
   final int totalAmount;
+
+  /// Montant à encaisser auprès du destinataire (null : rien à encaisser).
+  final int? parcelAmount;
   final Person? client;
   final Person? courier;
   final PaymentProof? latestPayment;
@@ -160,6 +171,7 @@ class Delivery {
     required this.deliveryFee,
     required this.itemsAmount,
     required this.totalAmount,
+    this.parcelAmount,
     this.client,
     this.courier,
     this.latestPayment,
@@ -173,6 +185,9 @@ class Delivery {
   });
 
   bool get isActive => status != DeliveryStatus.delivered && status != DeliveryStatus.cancelled;
+
+  /// Le serveur accepte encore des photos tant que le colis n'est pas récupéré.
+  bool get acceptsPhotos => status == DeliveryStatus.pending || status == DeliveryStatus.assigned;
 
   static DateTime? _date(dynamic value) => value == null ? null : DateTime.parse(value as String).toLocal();
 
@@ -191,10 +206,11 @@ class Delivery {
         scheduledAt: _date(json['scheduled_at']),
         deadlineAt: _date(json['deadline_at']),
         isUrgent: json['is_urgent'] as bool? ?? false,
-        distanceKm: (json['distance_km'] as num).toDouble(),
-        deliveryFee: json['delivery_fee'] as int,
-        itemsAmount: json['items_amount'] as int? ?? 0,
-        totalAmount: json['total_amount'] as int,
+        distanceKm: (json['distance_km'] as num?)?.toDouble() ?? 0,
+        deliveryFee: (json['delivery_fee'] as num?)?.toInt() ?? 0,
+        itemsAmount: (json['items_amount'] as num?)?.toInt() ?? 0,
+        totalAmount: (json['total_amount'] as num?)?.toInt() ?? 0,
+        parcelAmount: (json['parcel_amount'] as num?)?.toInt(),
         client: Person.fromJson(json['client']),
         courier: Person.fromJson(json['courier']),
         latestPayment: json['latest_payment'] is Map<String, dynamic>
@@ -202,10 +218,10 @@ class Delivery {
             : null,
         canPay: json['can_pay'] as bool? ?? false,
         canCancel: json['can_cancel'] as bool? ?? false,
-        createdAt: _date(json['created_at'])!,
+        createdAt: _date(json['created_at']) ?? DateTime.now(),
         deliveredAt: _date(json['delivered_at']),
         cancelReason: json['cancel_reason'] as String?,
-        photos: (json['photos'] as List? ?? const []).cast<String>(),
+        photos: (json['photos'] as List? ?? const []).whereType<String>().toList(),
         requestId: json['request_id'] as int?,
       );
 }

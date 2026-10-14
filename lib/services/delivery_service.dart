@@ -95,23 +95,27 @@ class DeliveryService {
     return ChatMessage.fromJson((data as Map<String, dynamic>)['data'] as Map<String, dynamic>);
   }
 
-  Future<List<Product>> products({required String category, int? subcategoryId, String? type, String? search}) async =>
+  /// [others] : produits sans famille (onglet « Autres produits »).
+  Future<List<Product>> products(
+          {required String category, int? subcategoryId, bool others = false, String? type, String? search}) async =>
       _list(
         await _api.get('/products', query: {
           'category': category,
           if (subcategoryId != null) 'subcategory_id': '$subcategoryId',
+          if (others) 'others': '1',
           if (type != null) 'type': type,
           if (search != null && search.isNotEmpty) 'search': search,
         }),
         Product.fromJson,
       );
 
-  /// Onglets d'une catégorie (et présence de packs).
-  Future<(List<Subcategory>, bool)> subcategories(String category) async {
+  /// Onglets d'une catégorie, présence de packs et de produits sans famille (« Autres produits »).
+  Future<({List<Subcategory> subcategories, bool hasPacks, bool hasOthers})> subcategories(String category) async {
     final data = await _api.get('/subcategories', query: {'category': category}) as Map<String, dynamic>;
     return (
-      (data['data'] as List).map((e) => Subcategory.fromJson(e as Map<String, dynamic>)).toList(),
-      data['has_packs'] as bool? ?? false,
+      subcategories: (data['data'] as List).map((e) => Subcategory.fromJson(e as Map<String, dynamic>)).toList(),
+      hasPacks: data['has_packs'] as bool? ?? false,
+      hasOthers: data['has_others'] as bool? ?? false,
     );
   }
 

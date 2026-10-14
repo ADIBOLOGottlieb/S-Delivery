@@ -94,8 +94,11 @@ class DeliveryFlowTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.payment_status', 'submitted');
 
+        // Capture stockée en base (le disque Render est effacé à chaque redéploiement).
         $payment = Payment::firstOrFail();
-        Storage::disk('local')->assertExists($payment->screenshot_path);
+        $this->assertNull($payment->screenshot_path);
+        $this->assertNotNull($payment->screenshot_media_id);
+        $this->assertSame([], Storage::disk('local')->allFiles());
 
         // 3. L'admin ne peut pas assigner avant validation, puis valide et assigne
         $this->actingAs($admin)

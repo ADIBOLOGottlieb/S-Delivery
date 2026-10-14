@@ -114,11 +114,20 @@ class PaymentInfo {
   final String? instructions;
   final List<PaymentMethodInfo> methods;
 
-  const PaymentInfo({required this.merchantName, this.instructions, required this.methods});
+  /// Numéro de l'agence (null tant que l'admin ne l'a pas renseigné).
+  final String? supportPhone;
 
-  factory PaymentInfo.fromJson(Map<String, dynamic> json) => PaymentInfo(
-        merchantName: json['merchant_name'] as String? ?? 'VOOM Delivery',
-        instructions: json['instructions'] as String?,
-        methods: (json['methods'] as List).map((m) => PaymentMethodInfo.fromJson(m as Map<String, dynamic>)).toList(),
-      );
+  const PaymentInfo({required this.merchantName, this.instructions, required this.methods, this.supportPhone});
+
+  factory PaymentInfo.fromJson(Map<String, dynamic> json) {
+    final phone = (json['support_phone'] as String?)?.trim();
+    return PaymentInfo(
+      merchantName: json['merchant_name'] as String? ?? 'VOOM Delivery',
+      instructions: json['instructions'] as String?,
+      methods: (json['methods'] as List? ?? const [])
+          .map((m) => PaymentMethodInfo.fromJson(m as Map<String, dynamic>))
+          .toList(),
+      supportPhone: phone == null || phone.isEmpty ? null : phone,
+    );
+  }
 }

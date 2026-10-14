@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -121,10 +122,11 @@ class Delivery extends Model
             && in_array($this->payment_status, [PaymentStatus::Unpaid, PaymentStatus::Rejected], true);
     }
 
+    /** Plus d'annulation depuis l'app dès qu'une preuve de paiement est envoyée (en vérification ou confirmée). */
     public function canBeCancelledByClient(): bool
     {
         return $this->status === DeliveryStatus::Pending
-            && $this->payment_status !== PaymentStatus::Verified;
+            && in_array($this->payment_status, [PaymentStatus::Unpaid, PaymentStatus::Rejected], true);
     }
 
     public function canBeAssigned(): bool
@@ -133,58 +135,125 @@ class Delivery extends Model
             && $this->payment_status === PaymentStatus::Verified;
     }
 
-    public function assignTo(User $courier): void
+    /** Annulée alors que le client avait payé : l'agence doit le rembourser. */
+    public function needsRefund(): bool
+    {
+        return $this->status === DeliveryStatus::Cancelled && $this->payment_status === PaymentStatus::Verified;
+    }
+
+    /** Relit la livraison en la verrouillant jusqu'à la fin de la transaction en cours. */
+    public function lockFresh(): self
+    {
+        return static::whereKey($this->getKey())->lockForUpdate()->firstOrFail();
+    }
+
+    /**
+     * Assigne (ou réassigne) un livreur.
+     *
+     * @return int|null livreur précédent, s'il a été remplacé
+     */
+    public function assignTo(User $courier): ?int
     {
         if (! $courier->isCourier() || ! $courier->is_active) {
             throw ValidationException::withMessages(['courier_id' => "Ce compte n'est pas un livreur actif."]);
         }
-        if (! $this->canBeAssigned()) {
-            throw ValidationException::withMessages([
-                'courier_id' => 'Le paiement doit être confirmé et le colis pas encore récupéré pour assigner un livreur.',
-            ]);
-        }
 
-        $this->forceFill([
-            'courier_id' => $courier->id,
-            'status' => DeliveryStatus::Assigned,
-            'assigned_at' => now(),
-        ])->save();
+        return DB::transaction(function () use ($courier) {
+            $fresh = $this->lockFresh();
+            if (! $fresh->canBeAssigned()) {
+                throw ValidationException::withMessages([
+                    'courier_id' => 'Le paiement doit être confirmé et le colis pas encore récupéré pour assigner un livreur.',
+                ]);
+            }
+
+            $previous = $fresh->courier_id !== null && $fresh->courier_id !== $courier->id ? $fresh->courier_id : null;
+            $fresh->forceFill([
+                'courier_id' => $courier->id,
+                'status' => DeliveryStatus::Assigned,
+                'assigned_at' => $fresh->courier_id === $courier->id ? $fresh->assigned_at : now(),
+            ])->save();
+            $this->syncFrom($fresh);
+
+            return $previous;
+        });
     }
 
     /** Transition effectuée par le livreur : assigned -> picked_up -> delivered. */
-    public function advanceByCourier(DeliveryStatus $target): void
+    public function advanceByCourier(DeliveryStatus $target, ?User $courier = null): void
     {
-        $allowed = match ($this->status) {
-            DeliveryStatus::Assigned => DeliveryStatus::PickedUp,
-            DeliveryStatus::PickedUp => DeliveryStatus::Delivered,
-            default => null,
-        };
+        DB::transaction(function () use ($target, $courier) {
+            $fresh = $this->lockFresh();
+            if ($courier && $fresh->courier_id !== $courier->id) {
+                throw ValidationException::withMessages(['status' => 'Cette course a été confiée à un autre livreur.']);
+            }
 
-        if ($allowed !== $target) {
-            throw ValidationException::withMessages([
-                'status' => "Transition impossible : {$this->status->label()} → {$target->label()}.",
-            ]);
-        }
+            $allowed = match ($fresh->status) {
+                DeliveryStatus::Assigned => DeliveryStatus::PickedUp,
+                DeliveryStatus::PickedUp => DeliveryStatus::Delivered,
+                default => null,
+            };
 
-        $this->status = $target;
-        if ($target === DeliveryStatus::PickedUp) {
-            $this->picked_up_at = now();
-        } else {
-            $this->delivered_at = now();
-        }
-        $this->save();
+            if ($allowed !== $target) {
+                throw ValidationException::withMessages([
+                    'status' => "Transition impossible : {$fresh->status->label()} → {$target->label()}.",
+                ]);
+            }
+
+            $fresh->status = $target;
+            if ($target === DeliveryStatus::PickedUp) {
+                $fresh->picked_up_at = now();
+            } else {
+                $fresh->delivered_at = now();
+            }
+            $fresh->save();
+            $this->syncFrom($fresh);
+        });
     }
 
     public function cancel(?string $reason = null): void
     {
-        if ($this->status->isFinal()) {
-            throw ValidationException::withMessages(['status' => 'Cette livraison est déjà terminée.']);
-        }
+        $this->cancelWhen(fn (self $fresh) => $fresh->status->isFinal() ? 'Cette livraison est déjà terminée.' : null, $reason);
+    }
 
-        $this->forceFill([
-            'status' => DeliveryStatus::Cancelled,
-            'cancelled_at' => now(),
-            'cancel_reason' => $reason,
-        ])->save();
+    /** Annulation depuis l'app : recontrôlée sous verrou (une preuve a pu arriver entre-temps). */
+    public function cancelByClient(string $reason): void
+    {
+        $this->cancelWhen(fn (self $fresh) => $fresh->canBeCancelledByClient() ? null : $fresh->clientCancelRefusal(), $reason);
+    }
+
+    public function clientCancelRefusal(): string
+    {
+        return $this->payment_status === PaymentStatus::Submitted
+            ? "Votre preuve de paiement est en cours de vérification : l'annulation n'est plus possible depuis l'application. Contactez l'agence."
+            : "Cette livraison ne peut plus être annulée depuis l'application. Contactez l'agence.";
+    }
+
+    /** @param callable(self): ?string $refusal motif du refus, ou null si l'annulation est permise */
+    private function cancelWhen(callable $refusal, ?string $reason): void
+    {
+        DB::transaction(function () use ($refusal, $reason) {
+            $fresh = $this->lockFresh();
+            if ($message = $refusal($fresh)) {
+                throw ValidationException::withMessages(['status' => $message]);
+            }
+
+            $fresh->forceFill([
+                'status' => DeliveryStatus::Cancelled,
+                'cancelled_at' => now(),
+                'cancel_reason' => $reason,
+            ])->save();
+
+            // La demande photo d'origine redevient « en discussion » : l'agence peut reprogrammer.
+            DeliveryRequest::where('delivery_id', $fresh->id)
+                ->where('status', DeliveryRequest::SCHEDULED)
+                ->update(['status' => DeliveryRequest::OPEN]);
+
+            $this->syncFrom($fresh);
+        });
+    }
+
+    private function syncFrom(self $fresh): void
+    {
+        $this->setRawAttributes($fresh->getAttributes(), true);
     }
 }

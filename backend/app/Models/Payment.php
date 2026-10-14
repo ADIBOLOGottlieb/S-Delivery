@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
     'delivery_id', 'method', 'transaction_ref', 'payer_phone', 'amount',
-    'screenshot_path', 'status', 'reviewed_by', 'reviewed_at', 'rejection_reason',
+    'screenshot_path', 'screenshot_media_id', 'status', 'reviewed_by', 'reviewed_at', 'rejection_reason',
 ])]
 class Payment extends Model
 {
@@ -32,5 +32,35 @@ class Payment extends Model
     public function reviewer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
+    /** Capture d'écran de la transaction, stockée en base. */
+    public function screenshot(): BelongsTo
+    {
+        return $this->belongsTo(Media::class, 'screenshot_media_id');
+    }
+
+    /** Capture en base, ou ancien fichier sur disque (avant la migration). */
+    public function hasScreenshot(): bool
+    {
+        return $this->screenshot_media_id !== null || $this->screenshot_path !== null;
+    }
+
+    /** « mx 12 ab » → « MX12AB » : une référence ne peut pas resservir sous une autre écriture. */
+    public static function normalizeReference(?string $reference): ?string
+    {
+        $normalized = mb_strtoupper(preg_replace('/\s+/u', '', (string) $reference) ?? '');
+
+        return $normalized === '' ? null : $normalized;
+    }
+
+    /** Référence déjà utilisée par un paiement non refusé (anciennes écritures comprises). */
+    public static function referenceInUse(PaymentMethod|string $method, string $normalized): bool
+    {
+        return static::query()
+            ->where('method', $method instanceof PaymentMethod ? $method->value : $method)
+            ->whereRaw("upper(replace(transaction_ref, ' ', '')) = ?", [$normalized])
+            ->where('status', '!=', PaymentStatus::Rejected)
+            ->exists();
     }
 }

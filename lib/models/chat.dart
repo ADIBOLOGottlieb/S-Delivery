@@ -75,7 +75,7 @@ class ScheduledDelivery {
         id: json['id'] as int,
         reference: json['reference'] as String,
         statusLabel: json['status_label'] as String,
-        totalAmount: json['total_amount'] as int,
+        totalAmount: (json['total_amount'] as num?)?.toInt() ?? 0,
         canPay: json['can_pay'] as bool? ?? false,
       );
 }
@@ -119,6 +119,6 @@ class ChatMessage {
         photoUrl: json['photo_url'] as String?,
         lat: (json['lat'] as num?)?.toDouble(),
         lng: (json['lng'] as num?)?.toDouble(),
-        createdAt: DateTime.parse(json['created_at'] as String).toLocal(),
+        createdAt: json['created_at'] == null ? DateTime.now() : DateTime.parse(json['created_at'] as String).toLocal(),
       );
 }

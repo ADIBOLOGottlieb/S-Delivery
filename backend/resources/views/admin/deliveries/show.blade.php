@@ -17,6 +17,18 @@
         <span class="text-gray-500 text-sm">{{ $delivery->type->label() }} · créée le {{ $delivery->created_at->format('d/m/Y H:i') }}</span>
     </div>
 
+    @if ($delivery->needsRefund())
+        <div class="mb-6 rounded-lg border border-red-300 bg-red-50 text-red-800 p-4">
+            <strong>À rembourser :</strong> livraison annulée alors que le paiement de {{ $money($delivery->total_amount) }} était confirmé.
+            Remboursez le client ({{ $delivery->client->phone_number }}).
+        </div>
+    @elseif ($delivery->status === \App\Enums\DeliveryStatus::Cancelled && $delivery->payment_status === \App\Enums\PaymentStatus::Submitted)
+        <div class="mb-6 rounded-lg border border-orange-300 bg-orange-50 text-orange-800 p-4">
+            Livraison annulée avec une preuve de paiement non traitée : vérifiez la transaction sur le compte marchand,
+            remboursez le client si elle existe, puis refusez la preuve.
+        </div>
+    @endif
+
     <div class="grid lg:grid-cols-3 gap-6">
         <div class="lg:col-span-2 space-y-6">
             {{-- Trajet --}}
@@ -25,7 +37,12 @@
                     <div>
                         <h2 class="font-semibold text-green-700 mb-1">A · Récupération</h2>
                         <p>{{ $delivery->pickup_address }}</p>
-                        <p class="text-sm text-gray-600">{{ $delivery->pickup_contact_name ?? $delivery->client->name }} · {{ $delivery->pickup_contact_phone ?? $delivery->client->phone_number }}</p>
+                        @if ($delivery->product_id)
+                            {{-- Commande de produit : on appelle le vendeur, pas le client. --}}
+                            <p class="text-sm text-gray-600">{{ $delivery->pickup_contact_name ?? 'Vendeur' }} · {{ $delivery->pickup_contact_phone ?? 'numéro du vendeur non renseigné' }}</p>
+                        @else
+                            <p class="text-sm text-gray-600">{{ $delivery->pickup_contact_name ?? $delivery->client->name }} · {{ $delivery->pickup_contact_phone ?? $delivery->client->phone_number }}</p>
+                        @endif
                         <a href="{{ $maps($delivery->pickup_lat, $delivery->pickup_lng) }}" target="_blank" class="text-sm text-blue-600 underline">Voir sur Google Maps</a>
                     </div>
                     <div>
@@ -66,6 +83,9 @@
                         <dt class="text-gray-500">Articles</dt><dd>{{ $money($delivery->items_amount) }}</dd>
                     @endif
                     <dt class="text-gray-500 font-semibold">Total</dt><dd class="font-semibold">{{ $money($delivery->total_amount) }}</dd>
+                    @if ($delivery->deliveryRequest?->parcel_amount)
+                        <dt class="text-gray-500">À encaisser au destinataire</dt><dd>{{ $money($delivery->deliveryRequest->parcel_amount) }}</dd>
+                    @endif
                     @if ($delivery->cancel_reason)
                         <dt class="text-gray-500">Motif d'annulation</dt><dd>{{ $delivery->cancel_reason }}</dd>
                     @endif
@@ -97,7 +117,7 @@
                 <h2 class="font-semibold mb-3">Paiements</h2>
                 @forelse ($delivery->payments as $payment)
                     <div class="border rounded-lg p-4 mb-4 grid md:grid-cols-3 gap-4">
-                        @if ($payment->screenshot_path)
+                        @if ($payment->hasScreenshot())
                             <a href="{{ route('admin.payments.screenshot', $payment) }}" target="_blank">
                                 <img src="{{ route('admin.payments.screenshot', $payment) }}" alt="Capture de la transaction"
                                      class="w-full max-h-80 object-contain bg-gray-50 rounded border">
@@ -201,6 +221,9 @@
             @unless ($delivery->status->isFinal())
                 <section class="bg-white rounded-lg shadow-sm p-5">
                     <h2 class="font-semibold mb-3 text-red-700">Annuler la livraison</h2>
+                    @if ($delivery->payment_status === \App\Enums\PaymentStatus::Verified)
+                        <p class="text-xs text-red-700 mb-2">Le client a déjà payé {{ $money($delivery->total_amount) }} : la livraison sera marquée « à rembourser ».</p>
+                    @endif
                     <form method="POST" action="{{ route('admin.deliveries.cancel', $delivery) }}" class="space-y-2"
                           onsubmit="return confirm('Annuler définitivement cette livraison ?')">
                         @csrf

@@ -6,6 +6,7 @@ use App\Enums\DeliveryStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\DeliveryResource;
 use App\Models\Delivery;
+use App\Services\DeliveryReminder;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Validation\Rule;
@@ -13,7 +14,7 @@ use Illuminate\Validation\Rule;
 /** Livraisons assignées au livreur connecté. */
 class CourierDeliveryController extends Controller
 {
-    private const RELATIONS = ['client', 'product', 'photos'];
+    private const RELATIONS = ['client', 'product', 'photos', 'deliveryRequest'];
 
     /** ?scope=active (par défaut : assignées / récupérées) ou ?scope=history (terminées). */
     public function index(Request $request): AnonymousResourceCollection
@@ -46,7 +47,9 @@ class CourierDeliveryController extends Controller
             'status' => ['required', Rule::in([DeliveryStatus::PickedUp->value, DeliveryStatus::Delivered->value])],
         ]);
 
-        $delivery->advanceByCourier(DeliveryStatus::from($data['status']));
+        $target = DeliveryStatus::from($data['status']);
+        $delivery->advanceByCourier($target, $request->user());
+        app(DeliveryReminder::class)->notifyClient($delivery, $target === DeliveryStatus::PickedUp ? 'picked_up' : 'delivered');
 
         return new DeliveryResource($delivery->load(self::RELATIONS));
     }

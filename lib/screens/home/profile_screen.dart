@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../services/api_client.dart';
 import '../../services/auth_service.dart';
+import '../../services/support_phone.dart';
 import '../../utils/colors.dart';
 import '../../utils/launchers.dart';
 import '../../widgets/photos.dart';
@@ -14,6 +15,7 @@ import 'credentials_screen.dart';
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
+  /// Numéro de repli (fictif) : jamais affiché, le vrai numéro vient du serveur (support_phone).
   static const supportPhone = '+22890000000';
 
   @override
@@ -22,6 +24,17 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _uploading = false;
+
+  /// Numéro de l'agence configuré par l'admin ; la carte « Contacter l'agence » est masquée sans lui.
+  String? _supportPhone;
+
+  @override
+  void initState() {
+    super.initState();
+    SupportPhone.load(context.read<ApiClient>()).then((phone) {
+      if (mounted && phone != null && phone != ProfileScreen.supportPhone) setState(() => _supportPhone = phone);
+    });
+  }
 
   /// Ajoute, change ou retire la photo de profil.
   Future<void> _editPhoto() async {
@@ -173,15 +186,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
               onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CredentialsScreen())),
             ),
           ),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.support_agent),
-              title: const Text("Contacter l'agence"),
-              subtitle: const Text(ProfileScreen.supportPhone),
-              trailing: const Icon(Icons.call),
-              onTap: () => callPhone(context, ProfileScreen.supportPhone),
+          if (_supportPhone != null)
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.support_agent),
+                title: const Text("Contacter l'agence"),
+                subtitle: Text(_supportPhone!),
+                trailing: const Icon(Icons.call),
+                onTap: () => callPhone(context, _supportPhone!),
+              ),
             ),
-          ),
           const Card(
             child: ListTile(
               leading: Icon(Icons.info_outline),

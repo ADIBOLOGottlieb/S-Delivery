@@ -23,6 +23,7 @@ class SettingController extends Controller
             'merchant_name' => ['required', 'string', 'max:255'],
             'flooz_merchant_number' => ['nullable', 'string', 'max:30'],
             'mixx_merchant_number' => ['nullable', 'string', 'max:30'],
+            'support_phone' => ['nullable', 'string', 'max:30'],
             'payment_instructions' => ['nullable', 'string', 'max:1000'],
             'base_fee' => ['required', 'integer', 'min:0'],
             'per_km_fee' => ['required', 'integer', 'min:0'],

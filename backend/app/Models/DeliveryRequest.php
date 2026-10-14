@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Enums\DeliveryStatus;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -101,6 +103,27 @@ class DeliveryRequest extends Model
             ->where(fn ($q) => $q->whereNull('sender_id')->orWhere('sender_id', '!=', $this->client_id))
             ->where('id', '>', $this->client_read_id ?? 0)
             ->count();
+    }
+
+    /** Même compte que unreadForClient(), en une seule requête pour toute une liste (attribut unread_count). */
+    public function scopeWithUnreadForClient(Builder $query): Builder
+    {
+        return $query->withCount(['messages as unread_count' => fn ($q) => $q
+            ->where(fn ($q) => $q->whereNull('chat_messages.sender_id')
+                ->orWhereColumn('chat_messages.sender_id', '!=', 'delivery_requests.client_id'))
+            ->whereRaw('chat_messages.id > coalesce(delivery_requests.client_read_id, 0)')]);
+    }
+
+    /** Livraison liée encore en cours (ni livrée ni annulée). */
+    public function hasActiveDelivery(): bool
+    {
+        return $this->delivery !== null && ! $this->delivery->status->isFinal();
+    }
+
+    /** L'agence peut (re)programmer : aucune livraison, ou la précédente a été annulée. */
+    public function canBeScheduled(): bool
+    {
+        return $this->delivery_id === null || $this->delivery?->status === DeliveryStatus::Cancelled;
     }
 
     /** Nouveau message que l'agence n'a pas encore lu. */

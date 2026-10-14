@@ -10,7 +10,7 @@ import 'push_service.dart';
 
 class AuthService extends ChangeNotifier {
   AuthService(this._api, {FlutterSecureStorage? storage}) : _storage = storage ?? const FlutterSecureStorage() {
-    _api.onUnauthorized = _clearSession;
+    _api.onUnauthorized = _onUnauthorized;
   }
 
   static const _tokenKey = 'auth_token';
@@ -21,10 +21,31 @@ class AuthService extends ChangeNotifier {
 
   User? _user;
   bool _isLoading = false;
+  bool _sessionExpired = false;
+  bool _loggingOut = false;
 
   User? get user => _user;
   bool get isLoading => _isLoading;
   bool get isAuthenticated => _api.token != null && _user != null;
+
+  /// Vrai quand le serveur a refusé le jeton (401) alors que l'utilisateur était connecté,
+  /// sans déconnexion volontaire. Remis à faux par [consumeSessionExpired].
+  bool get sessionExpired => _sessionExpired;
+
+  /// Lit et efface le signal « session expirée » (traité une seule fois).
+  bool consumeSessionExpired() {
+    final expired = _sessionExpired;
+    _sessionExpired = false;
+    return expired;
+  }
+
+  /// Réponse 401 : jeton expiré ou compte désactivé par l'agence.
+  void _onUnauthorized() {
+    // Plusieurs requêtes peuvent échouer en même temps : un seul signal.
+    if (!isAuthenticated) return;
+    if (!_loggingOut) _sessionExpired = true;
+    _clearSession();
+  }
 
   /// Restaure la session enregistrée. À attendre avant de choisir l'écran de départ.
   Future<void> init() async {
@@ -48,7 +69,7 @@ class AuthService extends ChangeNotifier {
   Future<void> _refreshProfile() async {
     try {
       await _saveUser(await _api.get('/me'));
-    } on ApiException catch (e) {
+    } catch (e) {
       debugPrint('Profil non rafraîchi : $e');
     }
   }
@@ -78,7 +99,9 @@ class AuthService extends ChangeNotifier {
       }));
 
   Future<void> _saveUser(dynamic response) async {
-    _user = User.fromJson((response as Map<String, dynamic>)['data'] as Map<String, dynamic>);
+    // Réponse arrivée après une déconnexion : on ne recrée pas de session.
+    if (_api.token == null) return;
+    _user =User.fromJson((response as Map<String, dynamic>)['data'] as Map<String, dynamic>);
     await _storage.write(key: _userKey, value: jsonEncode(_user!.toJson()));
     notifyListeners();
   }
@@ -104,17 +127,45 @@ class AuthService extends ChangeNotifier {
     });
   }
 
+  /// Mot de passe oublié : envoie un code à l'email du compte, renvoie l'email masqué (« a***@gmail.com »).
+  Future<String> sendResetCode(String login) async {
+    final data = await _api.post('/password/forgot', {'login': login}) as Map<String, dynamic>;
+    return data['email'] as String? ?? '';
+  }
+
+  /// Nouveau mot de passe avec le code reçu par email ; l'utilisateur est ensuite connecté.
+  Future<void> resetPassword({
+    required String login,
+    required String code,
+    required String password,
+    required String confirmPassword,
+  }) {
+    return _authenticate('/password/reset', {
+      'login': login,
+      'code': code,
+      'password': password,
+      'password_confirmation': confirmPassword,
+    });
+  }
+
   Future<void> _authenticate(String path, Map<String, dynamic> body) async {
     _isLoading = true;
     notifyListeners();
     try {
       final data = await _api.post(path, body) as Map<String, dynamic>;
-      _api.token = data['token'] as String;
-      _user = User.fromJson(data['user'] as Map<String, dynamic>);
+      final token = data['token'] as String;
+      final user = User.fromJson(data['user'] as Map<String, dynamic>);
+      // Jeton enregistré avant de marquer l'utilisateur connecté (session restaurable au prochain lancement).
+      try {
+        await _storage.write(key: _tokenKey, value: token);
+        await _storage.write(key: _userKey, value: jsonEncode(user.toJson()));
+      } catch (e) {
+        debugPrint('Session non enregistrée sur le téléphone : $e');
+      }
+      _sessionExpired = false;
+      _api.token = token;
+      _user = user;
       _registerPush();
-      _user = User.fromJson(data['user'] as Map<String, dynamic>);
-      await _storage.write(key: _tokenKey, value: _api.token);
-      await _storage.write(key: _userKey, value: jsonEncode(_user!.toJson()));
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -128,20 +179,30 @@ class AuthService extends ChangeNotifier {
   }
 
   Future<void> logout() async {
-    await PushService.unregister();
+    _loggingOut = true;
     try {
-      if (_api.token != null) await _api.post('/logout');
-    } on ApiException catch (e) {
-      debugPrint('Déconnexion serveur impossible : $e');
+      await PushService.unregister();
+      try {
+        if (_api.token != null) await _api.post('/logout');
+      } on ApiException catch (e) {
+        debugPrint('Déconnexion serveur impossible : $e');
+      }
+      _sessionExpired = false;
+      await _clearSession();
+    } finally {
+      _loggingOut = false;
     }
-    await _clearSession();
   }
 
   Future<void> _clearSession() async {
     _api.token = null;
     _user = null;
-    await _storage.delete(key: _tokenKey);
-    await _storage.delete(key: _userKey);
     notifyListeners();
+    try {
+      await _storage.delete(key: _tokenKey);
+      await _storage.delete(key: _userKey);
+    } catch (e) {
+      debugPrint('Session locale non effacée : $e');
+    }
   }
 }

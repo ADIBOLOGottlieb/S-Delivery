@@ -9,22 +9,27 @@ use App\Models\DeliveryRequest;
 use App\Models\Media;
 use App\Services\PricingService;
 use App\Services\PushNotifier;
+use Closure;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 /** Demandes rapides des clients : discussion puis programmation de la livraison. */
 class RequestController extends Controller
 {
+    /** Demandes suivies par l'agence : en discussion ou programmées (le client peut encore écrire). */
+    private const ACTIVE = [DeliveryRequest::OPEN, DeliveryRequest::SCHEDULED];
+
     public function __construct(private readonly PushNotifier $push) {}
 
     /** Demandes dont le dernier message n'a pas été lu par l'agence. */
     public static function unreadCount(): int
     {
         return DeliveryRequest::query()
-            ->where('status', DeliveryRequest::OPEN)
+            ->whereIn('status', self::ACTIVE)
             ->whereNotNull('last_message_id')
             ->where(fn ($q) => $q->whereNull('admin_read_id')->orWhereColumn('last_message_id', '>', 'admin_read_id'))
             ->count();
@@ -32,11 +37,12 @@ class RequestController extends Controller
 
     public function index(Request $request): View
     {
-        $status = $request->query('status', DeliveryRequest::OPEN);
+        $status = $request->query('status', 'active');
 
         $requests = DeliveryRequest::query()
             ->with(['client', 'latestMessage', 'delivery'])
-            ->when($status !== 'all', fn ($q) => $q->where('status', $status))
+            ->when($status === 'active', fn ($q) => $q->whereIn('status', self::ACTIVE))
+            ->when(! in_array($status, ['active', 'all'], true), fn ($q) => $q->where('status', $status))
             ->orderByDesc('last_message_at')
             ->paginate(25)
             ->withQueryString();
@@ -49,8 +55,8 @@ class RequestController extends Controller
         $deliveryRequest->load(['client', 'messages.media', 'messages.sender', 'delivery']);
         $deliveryRequest->markReadByAdmin();
 
-        // Dernière livraison du client : pré-remplit le point A (souvent sa boutique).
-        $previous = Delivery::where('client_id', $deliveryRequest->client_id)->latest()->first();
+        // Dernière livraison du client (hors commandes de produits) : pré-remplit le point A (souvent sa boutique).
+        $previous = Delivery::where('client_id', $deliveryRequest->client_id)->whereNull('product_id')->latest()->first();
 
         return view('admin.requests.show', ['request' => $deliveryRequest, 'previous' => $previous]);
     }
@@ -72,11 +78,12 @@ class RequestController extends Controller
         return redirect()->route('admin.requests.show', $deliveryRequest);
     }
 
-    /** Crée la livraison à partir de la discussion ; le client n'a plus qu'à payer. */
+    /**
+     * Crée la livraison à partir de la discussion ; le client n'a plus qu'à payer.
+     * Possible aussi quand la livraison précédente a été annulée (reprogrammation).
+     */
     public function schedule(Request $request, DeliveryRequest $deliveryRequest, PricingService $pricing): RedirectResponse
     {
-        abort_if($deliveryRequest->delivery_id !== null, 422, 'Une livraison est déjà programmée pour cette demande.');
-
         $data = $request->validate([
             'type' => ['required', Rule::enum(DeliveryType::class)],
             'pickup_address' => ['required', 'string', 'max:255'],
@@ -92,11 +99,17 @@ class RequestController extends Controller
             'package_description' => ['nullable', 'string', 'max:1000'],
             'notes' => ['nullable', 'string', 'max:1000'],
             'scheduled_at' => ['nullable', 'required_if:type,programmee', 'date', 'after:now'],
-            'deadline_at' => ['nullable', 'date', 'after:now'],
+            'deadline_at' => ['nullable', 'date', 'after:now', $this->afterScheduledAt($request)],
             // Vide = tarif calculé selon la distance ; sinon prix convenu dans la discussion.
             'delivery_fee' => ['nullable', 'integer', 'min:0', 'max:1000000'],
             // Saisi par l'admin (le client n'envoie qu'une photo) ; rappelé au livreur dans les instructions.
             'parcel_amount' => ['nullable', 'integer', 'min:0', 'max:100000000'],
+        ], [
+            'scheduled_at.required_if' => "Indiquez la date et l'heure de passage.",
+            'scheduled_at.date' => 'Date de passage invalide.',
+            'scheduled_at.after' => "L'heure de passage doit être dans le futur.",
+            'deadline_at.date' => 'Heure limite invalide.',
+            'deadline_at.after' => "L'heure limite doit être dans le futur.",
         ]);
 
         $type = DeliveryType::from($data['type']);
@@ -109,14 +122,15 @@ class RequestController extends Controller
             $line = 'Montant total du colis : '.number_format($parcelAmount, 0, ',', ' ').' FCFA';
             $data['notes'] = trim($line."\n".($data['notes'] ?? ''));
         }
-        $deliveryRequest->forceFill([
-            'district' => $deliveryRequest->district ?? $data['dropoff_address'],
-            'recipient_phone' => $deliveryRequest->recipient_phone ?? $data['recipient_phone'],
-            'parcel_amount' => $parcelAmount ?? $deliveryRequest->parcel_amount,
-        ]);
 
-        $delivery = DB::transaction(function () use ($deliveryRequest, $data, $quote, $fee) {
-            $delivery = $deliveryRequest->client->deliveries()->create([
+        $delivery = DB::transaction(function () use ($deliveryRequest, $data, $quote, $fee, $parcelAmount) {
+            // Verrou : deux clics (ou deux admins) ne créent pas deux livraisons pour la même demande.
+            $locked = DeliveryRequest::whereKey($deliveryRequest->id)->lockForUpdate()->firstOrFail();
+            if (! $locked->canBeScheduled()) {
+                throw ValidationException::withMessages(['schedule' => 'Une livraison est déjà programmée pour cette demande.']);
+            }
+
+            $delivery = $locked->client->deliveries()->create([
                 ...$data,
                 'distance_km' => $quote['distance_km'],
                 'delivery_fee' => $fee,
@@ -125,14 +139,20 @@ class RequestController extends Controller
             ]);
 
             // Les photos envoyées dans la discussion accompagnent la livraison (visibles par le livreur).
-            $delivery->photos()->attach($deliveryRequest->messages()->whereNotNull('media_id')->pluck('media_id'));
+            $delivery->photos()->attach($locked->messages()->whereNotNull('media_id')->pluck('media_id'));
 
-            $deliveryRequest->forceFill(['delivery_id' => $delivery->id, 'status' => DeliveryRequest::SCHEDULED])->save();
-            $deliveryRequest->post(null, [
+            $locked->forceFill([
+                'district' => $locked->district ?? $data['dropoff_address'],
+                'recipient_phone' => $locked->recipient_phone ?? $data['recipient_phone'],
+                'parcel_amount' => $parcelAmount ?? $locked->parcel_amount,
+                'delivery_id' => $delivery->id,
+                'status' => DeliveryRequest::SCHEDULED,
+            ])->save();
+            $locked->post(null, [
                 'body' => "Livraison {$delivery->reference} programmée : ".number_format($fee, 0, ',', ' ')
                     ." FCFA. Payez depuis l'app pour la confirmer.",
             ]);
-            $deliveryRequest->markReadByAdmin();
+            $locked->markReadByAdmin();
 
             return $delivery;
         });
@@ -145,16 +165,34 @@ class RequestController extends Controller
 
     public function close(DeliveryRequest $deliveryRequest): RedirectResponse
     {
+        // Une demande dont la livraison est en cours reste suivie (le client peut encore écrire).
+        if ($deliveryRequest->hasActiveDelivery()) {
+            return back()->withErrors(['close' => "La livraison {$deliveryRequest->delivery->reference} est en cours : annulez-la avant de clôturer la demande."]);
+        }
+
         $deliveryRequest->forceFill(['status' => DeliveryRequest::CLOSED, 'admin_read_id' => $deliveryRequest->last_message_id])->save();
 
         return redirect()->route('admin.requests.index')->with('success', 'Demande clôturée.');
     }
 
+    /** Heure limite après l'heure de passage, quand les deux sont fournies. */
+    private function afterScheduledAt(Request $request): Closure
+    {
+        return function (string $attribute, mixed $value, Closure $fail) use ($request) {
+            $scheduled = strtotime((string) $request->input('scheduled_at'));
+            $deadline = strtotime((string) $value);
+            if ($request->filled('scheduled_at') && $scheduled && $deadline && $deadline <= $scheduled) {
+                $fail("L'heure limite doit être après l'heure de passage programmée.");
+            }
+        };
+    }
+
     private function notifyClient(DeliveryRequest $deliveryRequest, string $body): void
     {
-        $this->push->toUser($deliveryRequest->client, 'VOOM Delivery', $body, [
+        // Un push raté (Firebase indisponible) ne doit pas faire échouer l'action de l'agence.
+        rescue(fn () => $this->push->toUser($deliveryRequest->client, 'VOOM Delivery', $body, [
             'type' => 'chat',
             'request_id' => (string) $deliveryRequest->id,
-        ]);
+        ]));
     }
 }

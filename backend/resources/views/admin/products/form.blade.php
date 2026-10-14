@@ -21,8 +21,8 @@
             <input type="hidden" name="category" value="agro">
             <div class="col-span-2">
                 <label class="block text-sm font-medium mb-1">Sous-catégorie (onglet de l'app)</label>
-                <select name="subcategory_id" class="w-full border rounded px-3 py-2" @required(! $isPack)>
-                    <option value="">{{ $isPack ? '— Onglet « Packs » —' : 'Choisir…' }}</option>
+                <select name="subcategory_id" class="w-full border rounded px-3 py-2">
+                    <option value="">{{ $isPack ? '— Onglet « Packs » —' : 'Autres produits (sans famille, ex. œufs)' }}</option>
                     @foreach ($subcategories as $sub)
                         <option value="{{ $sub->id }}" @selected(old('subcategory_id', $product->subcategory_id) == $sub->id)>{{ $sub->name }}</option>
                     @endforeach
@@ -70,6 +70,10 @@
             <div>
                 <label class="block text-sm font-medium mb-1">Nom du vendeur</label>
                 <input name="vendor_name" value="{{ old('vendor_name', $product->vendor_name) }}" class="w-full border rounded px-3 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1">Téléphone du vendeur <span class="text-gray-500 font-normal">(le livreur l'appelle au retrait)</span></label>
+                <input name="vendor_phone" value="{{ old('vendor_phone', $product->vendor_phone) }}" placeholder="90 11 22 33" class="w-full border rounded px-3 py-2">
             </div>
             <div>
                 <label class="block text-sm font-medium mb-1">Adresse de récupération</label>

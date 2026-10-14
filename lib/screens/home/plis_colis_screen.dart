@@ -3,9 +3,10 @@ import 'package:provider/provider.dart';
 
 import '../../models/chat.dart';
 import '../../models/delivery.dart';
-import '../../services/delivery_service.dart';
+import '../../services/paged_api.dart';
 import '../../utils/colors.dart';
 import '../../utils/formatters.dart';
+import '../../widgets/paged_loader.dart';
 import '../../widgets/status_chip.dart';
 import '../chat/chat_screen.dart';
 import 'delivery_detail_screen.dart';
@@ -19,8 +20,9 @@ class PlisColisScreen extends StatefulWidget {
 }
 
 class PlisColisScreenState extends State<PlisColisScreen> {
-  late Future<List<Delivery>> _deliveries;
-  late Future<List<ChatRequest>> _chats;
+  late final PagedApi _api = context.read<PagedApi>();
+  late final _deliveries = PagedLoader<Delivery>((page) => _api.myDeliveries(page: page));
+  late final _chats = PagedLoader<ChatRequest>((page) => _api.chatRequests(page: page));
 
   @override
   void initState() {
@@ -28,28 +30,32 @@ class PlisColisScreenState extends State<PlisColisScreen> {
     _load();
   }
 
+  @override
+  void dispose() {
+    _deliveries.dispose();
+    _chats.dispose();
+    super.dispose();
+  }
+
+  /// Recharge en gardant les données affichées (pas de spinner plein écran).
   void _load() {
-    final service = context.read<DeliveryService>();
-    _deliveries = service.myDeliveries();
-    _chats = service.chatRequests().catchError((_) => <ChatRequest>[]);
+    _deliveries.refresh();
+    _chats.refresh();
   }
 
   /// Rechargé par la navigation principale à chaque ouverture de l'onglet.
-  void reload() => setState(_load);
+  void reload() => _load();
 
-  Future<void> _refresh() async {
-    setState(_load);
-    await Future.wait([_deliveries.catchError((_) => <Delivery>[]), _chats]);
-  }
+  Future<void> _refresh() => Future.wait([_deliveries.refresh(), _chats.refresh()]);
 
   Future<void> _openDelivery(Delivery d) async {
     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => DeliveryDetailScreen(deliveryId: d.id)));
-    if (mounted) setState(_load);
+    if (mounted) _load();
   }
 
   Future<void> _openChat(ChatRequest r) async {
     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(requestId: r.id, initial: r)));
-    if (mounted) setState(_load);
+    if (mounted) _load();
   }
 
   @override
@@ -78,10 +84,11 @@ class PlisColisScreenState extends State<PlisColisScreen> {
                   tabs: [
                     const Tab(text: 'Livraisons'),
                     Tab(
-                      child: FutureBuilder<List<ChatRequest>>(
-                        future: _chats,
-                        builder: (context, snap) {
-                          final unread = (snap.data ?? const <ChatRequest>[]).fold<int>(0, (sum, r) => sum + r.unread);
+                      child: ListenableBuilder(
+                        listenable: _chats,
+                        builder: (context, _) {
+                          final unread =
+                              (_chats.items ?? const <ChatRequest>[]).fold<int>(0, (sum, r) => sum + r.unread);
                           return Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -109,17 +116,17 @@ class PlisColisScreenState extends State<PlisColisScreen> {
   }
 
   Widget _deliveriesTab() {
-    return FutureBuilder<List<Delivery>>(
-      future: _deliveries,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
+    return ListenableBuilder(
+      listenable: _deliveries,
+      builder: (context, _) {
+        final items = _deliveries.items;
+        if (items == null) {
+          if (_deliveries.error != null && !_deliveries.loading) {
+            return ErrorRetryView(message: _deliveries.errorMessage, onRetry: _deliveries.refresh);
+          }
           return const Center(child: CircularProgressIndicator());
         }
-        if (snapshot.hasError) {
-          return _ErrorRetry(message: snapshot.error.toString(), onRetry: () => setState(_load));
-        }
-        final items = snapshot.data!;
-        if (items.isEmpty) {
+        if (items.isEmpty && _deliveries.error == null) {
           return const _Empty(
             icon: Icons.local_shipping_outlined,
             text: 'Aucune livraison pour le moment.\nAppuyez sur « Livrer » pour commencer.',
@@ -127,31 +134,49 @@ class PlisColisScreenState extends State<PlisColisScreen> {
         }
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-          children: [for (final d in items) DeliveryCard(delivery: d, onTap: () => _openDelivery(d))],
+          children: [
+            if (_deliveries.error != null)
+              StaleDataBanner(message: _deliveries.errorMessage, onRetry: _deliveries.refresh),
+            for (final d in items) DeliveryCard(delivery: d, onTap: () => _openDelivery(d)),
+            LoadMoreFooter(loader: _deliveries),
+          ],
         );
       },
     );
   }
 
   Widget _chatsTab() {
-    return FutureBuilder<List<ChatRequest>>(
-      future: _chats,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
+    return ListenableBuilder(
+      listenable: _chats,
+      builder: (context, _) {
+        final items = _chats.items;
+        if (items == null) {
+          // Erreur réseau : on ne fait pas croire qu'il n'y a « aucune discussion ».
+          if (_chats.error != null && !_chats.loading) {
+            return ErrorRetryView(message: _chats.errorMessage, onRetry: _chats.refresh);
+          }
           return const Center(child: CircularProgressIndicator());
         }
-        final items = snapshot.data ?? const <ChatRequest>[];
-        if (items.isEmpty) {
-          return _Empty(
+        if (items.isEmpty && _chats.error == null) {
+          return const _Empty(
             icon: Icons.forum_outlined,
             text: 'Aucune discussion.\nAppuyez sur « Livrer » et envoyez les photos de vos articles.',
           );
         }
-        return ListView.separated(
+        return ListView(
           padding: const EdgeInsets.symmetric(vertical: 8),
-          itemCount: items.length,
-          separatorBuilder: (_, __) => const Divider(height: 1, indent: 76),
-          itemBuilder: (context, i) => _ChatTile(request: items[i], onTap: () => _openChat(items[i])),
+          children: [
+            if (_chats.error != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: StaleDataBanner(message: _chats.errorMessage, onRetry: _chats.refresh),
+              ),
+            for (var i = 0; i < items.length; i++) ...[
+              if (i > 0) const Divider(height: 1, indent: 76),
+              _ChatTile(request: items[i], onTap: () => _openChat(items[i])),
+            ],
+            LoadMoreFooter(loader: _chats),
+          ],
         );
       },
     );
@@ -323,21 +348,3 @@ class _PointLine extends StatelessWidget {
   }
 }
 
-class _ErrorRetry extends StatelessWidget {
-  final String message;
-  final VoidCallback onRetry;
-
-  const _ErrorRetry({required this.message, required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(24),
-      children: [
-        Text(message, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.error)),
-        const SizedBox(height: 12),
-        Center(child: OutlinedButton(onPressed: onRetry, child: const Text('Réessayer'))),
-      ],
-    );
-  }
-}

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
@@ -43,6 +44,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   bool _searching = false;
   Timer? _reverseDebounce;
   Timer? _searchDebounce;
+  int _searchSeq = 0;
+  bool _sendingHere = false;
 
   @override
   void initState() {
@@ -94,11 +97,14 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   /// Adresse du point sous l'épingle (attend que la carte soit immobile).
   void _resolve() {
     _reverseDebounce?.cancel();
+    // « Valider » reste désactivé jusqu'à ce que l'adresse du nouveau point soit connue.
+    _resolving = true;
     _reverseDebounce = Timer(const Duration(milliseconds: 600), () async {
-      setState(() => _resolving = true);
+      if (!mounted) return;
       final point = _center;
       final place = await _geo.reverse(point);
-      if (!mounted || point != _center) return;
+      // Carte déplacée entre-temps : une nouvelle résolution est en cours pour le nouveau point.
+      if (!mounted || !_same(point, _center)) return;
       setState(() {
         _place = place ?? Place(point: point, label: 'Position sur la carte');
         _resolving = false;
@@ -106,40 +112,73 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
     });
   }
 
+  /// Deux points identiques à quelques centimètres près (le centre de la carte varie d'un arrondi).
+  static bool _same(LatLng a, LatLng b) =>
+      (a.latitude - b.latitude).abs() < 1e-6 && (a.longitude - b.longitude).abs() < 1e-6;
+
+  /// L'adresse affichée correspond bien au point sous l'épingle.
+  bool get _placeMatchesCenter => _place != null && _same(_place!.point, _center);
+
+  bool get _canConfirm => !_dragging && !_resolving && _placeMatchesCenter;
+
   void _onSearchChanged(String text) {
     _searchDebounce?.cancel();
+    // Toute réponse d'une recherche précédente devient périmée.
+    final seq = ++_searchSeq;
     if (text.trim().length < 3) {
-      setState(() => _results = const []);
+      setState(() {
+        _results = const [];
+        _searching = false;
+      });
       return;
     }
     _searchDebounce = Timer(const Duration(milliseconds: 700), () async {
+      if (!mounted) return;
       setState(() => _searching = true);
       final results = await _geo.search(text);
-      if (mounted) {
-        setState(() {
-          _results = results;
-          _searching = false;
-        });
-      }
+      if (!mounted || seq != _searchSeq) return;
+      setState(() {
+        _results = results;
+        _searching = false;
+      });
     });
   }
 
   void _pickResult(Place place) {
     FocusScope.of(context).unfocus();
-    _searchController.text = place.label;
+    _searchDebounce?.cancel();
+    _searchSeq++;
+    _reverseDebounce?.cancel();
+    _searchController.text = _limit(place.label);
     setState(() {
       _results = const [];
+      _searching = false;
+      _resolving = false;
       _place = place;
       _center = place.point;
     });
     _map.move(place.point, 17);
+    // Centre réel après déplacement (arrondi de la carte) : l'adresse choisie lui correspond.
+    final center = _map.camera.center;
+    setState(() {
+      _center = center;
+      _place = Place(point: center, label: place.label, details: place.details);
+    });
   }
+
+  /// Adresse limitée à 255 caractères (taille maximale acceptée par le serveur).
+  static String _limit(String text) => text.length <= _maxLabel ? text : text.substring(0, _maxLabel).trimRight();
+  static const _maxLabel = 255;
 
   void _confirm([Place? place]) {
     final chosen = place ?? _place;
     final point = place?.point ?? _center;
-    Navigator.of(context)
-        .pop(Place(point: point, label: chosen?.label ?? 'Position sur la carte', details: chosen?.details));
+    final details = chosen?.details;
+    Navigator.of(context).pop(Place(
+      point: point,
+      label: _limit(chosen?.label ?? 'Position sur la carte'),
+      details: details == null ? null : _limit(details),
+    ));
   }
 
   @override
@@ -222,6 +261,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                   TextField(
                     controller: _searchController,
                     onChanged: _onSearchChanged,
+                    inputFormatters: [LengthLimitingTextInputFormatter(_maxLabel)],
                     textInputAction: TextInputAction.search,
                     decoration: InputDecoration(
                       hintText: 'Rechercher un quartier, une rue, un marché…',
@@ -293,11 +333,17 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                   ),
                   title: const Text('Envoyer ma position actuelle', style: TextStyle(fontWeight: FontWeight.w600)),
                   subtitle: Text('Précision : ${(_accuracy ?? 0).round()} m'),
-                  onTap: () async {
-                    final here = _myPosition!;
-                    final place = await _geo.reverse(here);
-                    if (mounted) _confirm(place ?? Place(point: here, label: 'Ma position'));
-                  },
+                  trailing: _sendingHere
+                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                      : null,
+                  onTap: _sendingHere
+                      ? null
+                      : () async {
+                          final here = _myPosition!;
+                          setState(() => _sendingHere = true);
+                          final place = await _geo.reverse(here);
+                          if (mounted) _confirm(place ?? Place(point: here, label: 'Ma position'));
+                        },
                 ),
               ),
         children: [
@@ -306,7 +352,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
               const Icon(Icons.location_on, color: AppColors.error),
               const SizedBox(width: 8),
               Expanded(
-                child: _resolving || _dragging
+                child: _resolving || _dragging || (_place != null && !_placeMatchesCenter)
                     ? Text("Recherche de l'adresse…", style: Theme.of(context).textTheme.bodyMedium)
                     : Text(
                         _place?.label ?? "Déplacez la carte pour placer l'épingle",
@@ -318,7 +364,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
             ],
           ),
           ElevatedButton.icon(
-            onPressed: _dragging ? null : () => _confirm(),
+            onPressed: _canConfirm ? () => _confirm() : null,
             icon: const Icon(Icons.check),
             label: const Text('Valider cet emplacement'),
           ),
