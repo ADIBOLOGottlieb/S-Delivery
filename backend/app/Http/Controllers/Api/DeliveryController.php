@@ -54,7 +54,7 @@ class DeliveryController extends Controller
     {
         $data = $request->validate([
             'type' => $this->typeRules(),
-            'product_id' => ['nullable', Rule::exists('products', 'id')->where('is_active', true)],
+            'product_id' => ['bail', 'nullable', 'integer', Rule::exists('products', 'id')->where('is_active', true)],
             'quantity' => ['required_with:product_id', 'nullable', 'integer', 'min:1', 'max:100'],
             'pickup_address' => ['required_without:product_id', 'nullable', 'string', 'max:255'],
             'pickup_contact_name' => ['nullable', 'string', 'max:255'],
@@ -187,6 +187,7 @@ class DeliveryController extends Controller
             'type.required' => 'Choisissez un type de livraison.',
             'type.enum' => 'Type de livraison invalide.',
             'type.not_in' => "La livraison Express n'est plus proposée : choisissez Plis, Colis ou Programmée.",
+            'product_id.integer' => "Ce produit n'est plus disponible.",
             'product_id.exists' => "Ce produit n'est plus disponible.",
             'quantity.required_with' => 'Indiquez la quantité.',
             'quantity.integer' => 'La quantité doit être un nombre entier.',

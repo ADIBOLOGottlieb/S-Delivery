@@ -7,6 +7,8 @@ import '../../models/delivery.dart';
 import '../../services/api_client.dart';
 import '../../services/delivery_service.dart';
 import '../../services/push_service.dart';
+import '../../services/support_phone.dart';
+import '../../utils/app_navigator.dart';
 import '../../utils/colors.dart';
 import '../../utils/formatters.dart';
 import '../../utils/launchers.dart';
@@ -26,29 +28,56 @@ class CourierDeliveryScreen extends StatefulWidget {
   State<CourierDeliveryScreen> createState() => _CourierDeliveryScreenState();
 }
 
-class _CourierDeliveryScreenState extends State<CourierDeliveryScreen> {
+class _CourierDeliveryScreenState extends State<CourierDeliveryScreen> with WidgetsBindingObserver {
   Delivery? _delivery;
   String? _error;
   bool _updating = false;
   StreamSubscription<int>? _pushes;
+  Timer? _poll;
+  Future<void>? _loading;
+  String? _supportPhone;
+  late final String _shownKey = ShownScreens.deliveryKey(widget.deliveryId);
 
   @override
   void initState() {
     super.initState();
+    ShownScreens.enter(_shownKey);
+    WidgetsBinding.instance.addObserver(this);
     _load();
     // Course modifiée par l'agence (notification reçue) : rafraîchissement immédiat.
     _pushes = PushService.deliveryUpdates.listen((id) {
       if (id == widget.deliveryId) _load();
     });
+    // Filet de sécurité si la notification n'arrive pas : relecture régulière tant que la course est en cours.
+    _poll = Timer.periodic(const Duration(seconds: 20), (_) {
+      if ((_delivery?.isActive ?? false) && WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+        _load();
+      }
+    });
+    SupportPhone.load(context.read<ApiClient>()).then((phone) {
+      if (mounted && phone != null) setState(() => _supportPhone = phone);
+    });
   }
 
   @override
   void dispose() {
+    ShownScreens.leave(_shownKey);
+    WidgetsBinding.instance.removeObserver(this);
+    _poll?.cancel();
     _pushes?.cancel();
     super.dispose();
   }
 
-  Future<void> _load() async {
+  /// Retour au premier plan : la course a pu changer pendant que l'app était en arrière-plan.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _load();
+  }
+
+  /// Relecture de la course ; un chargement déjà en cours est réutilisé.
+  Future<void> _load() => _loading ??= _fetch().whenComplete(() => _loading = null);
+
+  Future<void> _fetch() async {
     try {
       final d = await context.read<DeliveryService>().courierDelivery(widget.deliveryId);
       if (mounted) {
@@ -62,6 +91,59 @@ class _CourierDeliveryScreenState extends State<CourierDeliveryScreen> {
       if (mounted && _delivery == null) setState(() => _error = e.message);
     } catch (_) {
       if (mounted && _delivery == null) setState(() => _error = 'Une erreur est survenue. Réessayez.');
+    }
+  }
+
+  /// « Signaler un problème » : appel ou WhatsApp vers l'agence.
+  Future<void> _reportProblem(Delivery d) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final phone = _supportPhone ?? await SupportPhone.load(context.read<ApiClient>());
+    if (!mounted) return;
+    if (phone == null) {
+      messenger.showSnackBar(const SnackBar(
+        content: Text("Numéro de l'agence indisponible pour le moment. Réessayez dans un instant."),
+        backgroundColor: AppColors.error,
+      ));
+      return;
+    }
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text('Problème sur la livraison ${d.reference}', style: Theme.of(context).textTheme.titleMedium),
+            ),
+            ListTile(
+              leading: const CircleAvatar(
+                backgroundColor: AppColors.success,
+                child: Icon(Icons.call, color: Colors.white),
+              ),
+              title: const Text("Appeler l'agence"),
+              subtitle: Text(phone),
+              onTap: () => Navigator.pop(context, 'call'),
+            ),
+            ListTile(
+              leading: const CircleAvatar(
+                backgroundColor: Color(0xFF25D366),
+                child: Icon(Icons.chat, color: Colors.white),
+              ),
+              title: const Text('Écrire sur WhatsApp'),
+              onTap: () => Navigator.pop(context, 'whatsapp'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || choice == null) return;
+    if (choice == 'call') {
+      await callPhone(context, phone);
+    } else {
+      await openWhatsApp(context, phone, message: 'Bonjour, problème sur la livraison ${d.reference} : ');
     }
   }
 
@@ -193,13 +275,20 @@ class _CourierDeliveryScreenState extends State<CourierDeliveryScreen> {
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  'Payé en ligne (${formatFcfa(d.totalAmount)}). Rien à encaisser auprès du client.',
+                                  'Livraison payée par Mobile Money (vérifiée par l\'agence). '
+                                  'Rien à encaisser auprès du client.',
                                 ),
                               ),
                             ]),
                         ],
                       ),
                     ),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => _reportProblem(d),
+                    icon: const Icon(Icons.report_problem_outlined, color: AppColors.error),
+                    label: const Text('Signaler un problème'),
                   ),
                 ],
               ),
@@ -218,7 +307,11 @@ class _CourierDeliveryScreenState extends State<CourierDeliveryScreen> {
       DeliveryStatus.pickedUp => (
           DeliveryStatus.delivered,
           'Confirmer la livraison',
-          'Confirmez-vous avoir remis le colis au destinataire ?'
+          // Colis à payer à la livraison : on vérifie l'encaissement avant de clôturer.
+          d.parcelAmount != null
+              ? 'Avez-vous encaissé ${formatFcfa(d.parcelAmount!)} auprès du destinataire ?\n\n'
+                  'Confirmez seulement après avoir reçu le montant et remis le colis.'
+              : 'Confirmez-vous avoir remis le colis au destinataire ?'
         ),
       _ => (null, '', ''),
     };

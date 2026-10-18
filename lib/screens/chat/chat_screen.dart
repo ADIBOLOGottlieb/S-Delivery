@@ -8,6 +8,8 @@ import '../../models/chat.dart';
 import '../../services/api_client.dart';
 import '../../services/delivery_service.dart';
 import '../../services/geocoding_service.dart';
+import '../../services/push_service.dart';
+import '../../utils/app_navigator.dart';
 import '../../utils/colors.dart';
 import '../../utils/formatters.dart';
 import '../../utils/launchers.dart';
@@ -32,57 +34,71 @@ class _ChatScreenState extends State<ChatScreen> {
   String? _error;
   bool _sending = false;
   Timer? _poll;
+  StreamSubscription<int>? _pushes;
+  late final String _shownKey = ShownScreens.chatKey(widget.requestId);
 
-  /// Chargement en cours : pas de second appel en parallèle, mais un rechargement est mis en attente.
-  bool _loading = false;
-  bool _reloadQueued = false;
+  /// Incrémenté à chaque message accepté par le serveur : une réponse demandée avant l'envoi est périmée.
+  int _generation = 0;
 
-  /// Messages pas encore acceptés par le serveur (envoi en cours ou échec, avec « Renvoyer »).
+  /// Chargement en cours, partagé par les appels simultanés (poll, push, après envoi).
+  Future<void>? _inFlight;
+  int _inFlightGeneration = -1;
+
+  /// Messages pas encore affichés depuis le serveur (envoi en cours, échec avec « Renvoyer », ou envoyés en attente).
   final List<_OutgoingMessage> _outbox = [];
 
   @override
   void initState() {
     super.initState();
+    ShownScreens.enter(_shownKey);
     _load();
     // Nouvelles réponses de l'agence sans recharger l'écran.
-    _poll = Timer.periodic(const Duration(seconds: 8), (_) {
-      if (!_sending) _load();
+    _poll = Timer.periodic(const Duration(seconds: 8), (_) => _load());
+    _pushes = PushService.chatUpdates.listen((id) {
+      if (id == widget.requestId) _load();
     });
   }
 
   @override
   void dispose() {
+    ShownScreens.leave(_shownKey);
     _poll?.cancel();
+    _pushes?.cancel();
     _input.dispose();
     super.dispose();
   }
 
-  Future<void> _load() async {
-    if (_loading) {
-      // Une réponse plus récente est attendue (ex. message qui vient d'être envoyé).
-      _reloadQueued = true;
-      return;
-    }
-    _loading = true;
+  /// Recharge la discussion ; un chargement déjà lancé depuis le dernier envoi est réutilisé.
+  Future<void> _load() {
+    final current = _inFlight;
+    if (current != null && _inFlightGeneration == _generation) return current;
+    final generation = _generation;
+    final future = _fetch(generation);
+    _inFlight = future;
+    _inFlightGeneration = generation;
+    future.whenComplete(() {
+      if (identical(_inFlight, future)) _inFlight = null;
+    });
+    return future;
+  }
+
+  Future<void> _fetch(int generation) async {
+    final service = context.read<DeliveryService>();
     try {
-      final r = await context.read<DeliveryService>().chatRequest(widget.requestId);
-      // Réponse périmée : un rechargement plus récent a été demandé entre-temps.
-      if (mounted && !_reloadQueued) {
-        setState(() {
-          _request = r;
-          _error = null;
-        });
-      }
+      final r = await service.chatRequest(widget.requestId);
+      // Seules les réponses demandées avant un envoi plus récent sont ignorées.
+      if (!mounted || generation != _generation) return;
+      final shown = {for (final m in r.messages) m.id};
+      setState(() {
+        _request = r;
+        _error = null;
+        // Message envoyé désormais affiché depuis le serveur : la bulle « Envoi… » disparaît.
+        _outbox.removeWhere((m) => m.sentId != null && shown.contains(m.sentId));
+      });
     } on ApiException catch (e) {
       if (mounted && _request == null) setState(() => _error = e.message);
     } catch (_) {
       if (mounted && _request == null) setState(() => _error = 'Une erreur est survenue. Réessayez.');
-    } finally {
-      _loading = false;
-    }
-    if (_reloadQueued && mounted) {
-      _reloadQueued = false;
-      await _load();
     }
   }
 
@@ -95,7 +111,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!_outbox.contains(message)) _outbox.add(message);
     });
     try {
-      await service.sendChatMessage(
+      final sent = await service.sendChatMessage(
         widget.requestId,
         body: message.body,
         photoPath: message.photoPath,
@@ -103,10 +119,10 @@ class _ChatScreenState extends State<ChatScreen> {
         lng: message.lng,
       );
       if (!mounted) return;
-      // Bulle en attente gardée jusqu'à l'arrivée du message enregistré (pas de trou à l'écran).
+      // Bulle gardée jusqu'à l'arrivée du message enregistré (pas de trou à l'écran).
+      setState(() => message.sentId = sent.id);
+      _generation++;
       await _load();
-      if (!mounted) return;
-      setState(() => _outbox.remove(message));
     } catch (e) {
       if (!mounted) return;
       setState(() => message.failed = true);
@@ -243,6 +259,9 @@ class _OutgoingMessage {
   final double? lat;
   final double? lng;
   bool failed = false;
+
+  /// Identifiant renvoyé par le serveur une fois le message accepté (en attente d'affichage).
+  int? sentId;
 
   _OutgoingMessage({this.body, this.photoPath, this.lat, this.lng});
 

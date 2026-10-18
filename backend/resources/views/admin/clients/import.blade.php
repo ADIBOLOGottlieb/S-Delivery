@@ -18,6 +18,8 @@
             <p class="text-xs text-gray-500">
                 Chaque client reçoit un mot de passe de 8 chiffres.
                 Les numéros déjà inscrits ou en double sont ignorés (rien n'est écrasé).
+                {{ \App\Http\Controllers\Admin\ClientAccountController::MAX_IMPORT_ROWS }} clients maximum par fichier :
+                découpez les listes plus longues en plusieurs fichiers.
             </p>
         </form>
 

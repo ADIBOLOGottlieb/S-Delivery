@@ -22,9 +22,34 @@ Future<void> callPhone(BuildContext context, String phone) {
   return _launch(context, uri, 'Impossible de lancer l\'appel.');
 }
 
+/// Ouvre WhatsApp vers [phone] avec un message prérempli.
+Future<void> openWhatsApp(BuildContext context, String phone, {String? message}) {
+  final digits = phone.replaceAll(RegExp(r'[^0-9]'), '');
+  final uri = Uri.https('wa.me', '/$digits', {if (message != null && message.isNotEmpty) 'text': message});
+  return _launch(context, uri, 'Impossible d\'ouvrir WhatsApp.');
+}
+
+/// Ouvre une page web dans le navigateur (ex. politique de confidentialité).
+Future<void> openWebPage(BuildContext context, String url) {
+  final uri = Uri.tryParse(url);
+  if (uri == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Lien invalide.'), backgroundColor: AppColors.error),
+    );
+    return Future.value();
+  }
+  return _launch(context, uri, 'Impossible d\'ouvrir la page.');
+}
+
 Future<void> _launch(BuildContext context, Uri uri, String error) async {
   final messenger = ScaffoldMessenger.of(context);
-  final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+  bool ok;
+  try {
+    ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+  } catch (_) {
+    // Aucune application pour ce lien (ex. WhatsApp absent).
+    ok = false;
+  }
   if (!ok) {
     messenger.showSnackBar(SnackBar(content: Text(error), backgroundColor: AppColors.error));
   }

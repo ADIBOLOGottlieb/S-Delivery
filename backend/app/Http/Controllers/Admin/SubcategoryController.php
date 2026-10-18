@@ -36,7 +36,11 @@ class SubcategoryController extends Controller
         ]);
 
         foreach ($data['items'] as $id => $values) {
-            Subcategory::whereKey($id)->update($values);
+            // Clé non numérique (formulaire trafiqué) : ignorée plutôt qu'une erreur SQL.
+            if (! ctype_digit((string) $id)) {
+                continue;
+            }
+            Subcategory::whereKey((int) $id)->update(['name' => $values['name'], 'position' => $values['position']]);
         }
 
         return back()->with('success', 'Sous-catégories enregistrées.');

@@ -9,7 +9,7 @@ use App\Models\User;
 use App\Support\Phone;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
+use App\Support\Identifier;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -49,14 +49,14 @@ class UserController extends Controller
 
     public function edit(User $courier): View
     {
-        abort_unless($courier->isCourier(), 404);
+        abort_unless($courier->isCourier() && ! $courier->isAnonymized(), 404);
 
         return view('admin.couriers.form', compact('courier'));
     }
 
     public function update(Request $request, User $courier): RedirectResponse
     {
-        abort_unless($courier->isCourier(), 404);
+        abort_unless($courier->isCourier() && ! $courier->isAnonymized(), 404);
 
         $data = $this->validated($request, $courier);
         if (empty($data['password'])) {
@@ -91,12 +91,11 @@ class UserController extends Controller
         $clients = User::query()
             ->where('role', Role::Client)
             ->when($search, function ($q) use ($search) {
-                // % et _ tapés par l'admin sont cherchés tels quels, pas comme jokers.
-                $like = '%'.addcslashes($search, '%_\\').'%';
+                // Insensible à la casse ; % et _ tapés par l'admin sont cherchés tels quels, pas comme jokers.
                 $q->where(fn ($q) => $q
-                    ->whereRaw("name like ? escape '\\'", [$like])
-                    ->orWhereRaw("phone_number like ? escape '\\'", [$like])
-                    ->orWhereRaw("email like ? escape '\\'", [$like]));
+                    ->whereContains('name', $search)
+                    ->orWhereContains('phone_number', $search)
+                    ->orWhereContains('email', $search));
             })
             ->withCount('deliveries')
             ->with('avatar:id,uuid')
@@ -110,6 +109,9 @@ class UserController extends Controller
     public function toggleClient(User $client): RedirectResponse
     {
         abort_unless($client->isClient(), 404);
+        if ($client->isAnonymized()) {
+            return back()->withErrors(['client' => 'Ce compte a été supprimé par son titulaire : il ne peut pas être réactivé.']);
+        }
 
         $client->update(['is_active' => ! $client->is_active]);
         if (! $client->is_active) {
@@ -122,9 +124,13 @@ class UserController extends Controller
     /** @return array<string, mixed> */
     private function validated(Request $request, ?User $courier = null): array
     {
+        // Email enregistré en minuscules : unicité et connexion insensibles à la casse.
+        if (is_string($request->input('email'))) {
+            $request->merge(['email' => Identifier::email($request->input('email'))]);
+        }
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['nullable', 'email', 'max:255', Rule::unique('users')->ignore($courier)],
+            'email' => ['nullable', 'email', 'max:255', Identifier::uniqueEmail($courier?->id)],
             'phone_number' => ['required', 'string', 'max:30'],
             'vehicle' => ['nullable', 'string', 'max:255'],
             'password' => [$courier ? 'nullable' : 'required', 'confirmed', Password::min(8)],

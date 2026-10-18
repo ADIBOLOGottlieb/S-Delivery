@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
@@ -16,6 +17,7 @@ import 'utils/theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  _installErrorHandlers();
   await initializeDateFormatting('fr');
   final api = ApiClient();
   // Réveille le serveur pendant l'écran de démarrage (l'hébergement gratuit se met en veille).
@@ -24,6 +26,34 @@ Future<void> main() async {
   PushService.onOpen = openFromNotification;
   unawaited(PushService.init());
   runApp(VoomDeliveryApp(api: api));
+}
+
+/// Erreurs non rattrapées : journalisées au lieu de faire planter l'app ; en release, un petit message
+/// remplace l'écran gris d'un widget en erreur.
+void _installErrorHandlers() {
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    debugPrint('Erreur Flutter : ${details.exceptionAsString()}');
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('Erreur non rattrapée : $error\n$stack');
+    return true;
+  };
+  if (kReleaseMode) {
+    ErrorWidget.builder = (details) => const Material(
+          color: Colors.transparent,
+          child: Center(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'Un problème est survenu',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Color(0xFF757575), fontSize: 14),
+              ),
+            ),
+          ),
+        );
+  }
 }
 
 class VoomDeliveryApp extends StatelessWidget {

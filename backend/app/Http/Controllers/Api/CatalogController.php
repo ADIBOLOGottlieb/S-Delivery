@@ -36,7 +36,8 @@ class CatalogController extends Controller
             ->when($data['subcategory_id'] ?? null, fn ($q, $s) => $q->where('subcategory_id', $s))
             ->when($request->boolean('others'), fn ($q) => $q->whereNull('subcategory_id')->where('type', 'product'))
             ->when($data['type'] ?? null, fn ($q, $t) => $q->where('type', $t))
-            ->when($data['search'] ?? null, fn ($q, $s) => $q->where('name', 'like', "%{$s}%"))
+            // Insensible à la casse (ilike sous PostgreSQL) ; % et _ cherchés tels quels.
+            ->when(trim((string) ($data['search'] ?? '')), fn ($q, $s) => $q->whereContains('name', $s))
             ->orderByRaw("case when type = 'pack' then 0 else 1 end")
             ->orderBy('name')
             ->paginate(100);
@@ -78,7 +79,11 @@ class CatalogController extends Controller
             'merchant_name' => Setting::get('merchant_name'),
             'instructions' => Setting::get('payment_instructions'),
             'support_phone' => Setting::get('support_phone') ?: null,
+            'support_email' => Setting::get('support_email') ?: null,
             'methods' => $methods,
+            // Pages publiques exigées par Google Play (URL absolues).
+            'privacy_url' => route('legal.privacy'),
+            'account_deletion_url' => route('legal.account-deletion'),
         ]);
     }
 }

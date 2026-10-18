@@ -25,6 +25,8 @@ class Setting extends Model
         'mixx_merchant_number' => '',
         // Numéro appelé par « Contacter l'agence » dans l'app.
         'support_phone' => '',
+        // Contact affiché dans la politique de confidentialité et la page de suppression de compte.
+        'support_email' => '',
         'payment_instructions' => "Envoyez le montant exact au numéro marchand, puis joignez la capture d'écran de la transaction.",
         'base_fee' => '500',
         'per_km_fee' => '150',

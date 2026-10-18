@@ -8,6 +8,7 @@ import '../../services/api_client.dart';
 import '../../services/delivery_service.dart';
 import '../../services/push_service.dart';
 import '../../services/support_phone.dart';
+import '../../utils/app_navigator.dart';
 import '../../utils/colors.dart';
 import '../../utils/formatters.dart';
 import '../../utils/launchers.dart';
@@ -40,10 +41,12 @@ class _DeliveryDetailScreenState extends State<DeliveryDetailScreen> {
   String? _supportPhone;
   Timer? _poll;
   StreamSubscription<int>? _pushes;
+  late final String _shownKey = ShownScreens.deliveryKey(widget.deliveryId);
 
   @override
   void initState() {
     super.initState();
+    ShownScreens.enter(_shownKey);
     _load();
     // Suivi en direct : relecture régulière tant que la livraison est en cours.
     _poll = Timer.periodic(const Duration(seconds: 20), (_) {
@@ -60,6 +63,7 @@ class _DeliveryDetailScreenState extends State<DeliveryDetailScreen> {
 
   @override
   void dispose() {
+    ShownScreens.leave(_shownKey);
     _poll?.cancel();
     _pushes?.cancel();
     super.dispose();

@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 
 import '../../services/api_client.dart';
 import '../../services/auth_service.dart';
+import '../../services/support_phone.dart';
 import '../../utils/colors.dart';
+import '../../utils/launchers.dart';
 import '../../widgets/auth_layout.dart';
 import '../../widgets/voom_logo.dart';
 import '../home/main_screen.dart';
@@ -33,6 +35,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _openPrivacy() async {
+    final url = await SupportPhone.privacyUrl(context.read<ApiClient>());
+    if (mounted) await openWebPage(context, url);
   }
 
   Future<void> _register() async {
@@ -149,7 +156,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         : const Text("S'inscrire"),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 10),
+                // Consentement : lien vers la politique de confidentialité (ouverte dans le navigateur).
+                TextButton(
+                  onPressed: _openPrivacy,
+                  child: const Text(
+                    'En créant un compte, vous acceptez la politique de confidentialité',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 12.5, decoration: TextDecoration.underline),
+                  ),
+                ),
+                const SizedBox(height: 6),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [

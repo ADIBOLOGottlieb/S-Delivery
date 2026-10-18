@@ -9,6 +9,7 @@ import '../../models/product.dart';
 import '../../services/delivery_service.dart';
 import '../../utils/colors.dart';
 import '../../utils/formatters.dart';
+import '../../widgets/paged_loader.dart';
 import '../../widgets/skeleton.dart';
 import 'delivery_detail_screen.dart';
 import 'new_delivery_screen.dart';
@@ -68,6 +69,10 @@ class ProductCatalogScreen extends StatefulWidget {
 
 class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
   List<_Tab> _tabs = const [_Tab('Tout', Icons.apps)];
+
+  /// Onglets reçus du serveur au moins une fois (sinon on les redemande au rafraîchissement).
+  bool _tabsLoaded = false;
+  bool _tabsLoading = false;
   int _tab = 0;
   late Future<List<Product>> _products;
   String _search = '';
@@ -89,10 +94,13 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
   }
 
   Future<void> _loadTabs() async {
+    if (_tabsLoading || _tabsLoaded) return;
+    _tabsLoading = true;
     try {
       final tabs = await context.read<DeliveryService>().subcategories(widget.category.value);
       if (!mounted) return;
       setState(() {
+        _tabsLoaded = true;
         // Sous-onglets nommés par l'admin, « Autres produits », puis « Packs » en dernier.
         _tabs = [
           const _Tab('Tout', Icons.apps),
@@ -102,7 +110,9 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
         ];
       });
     } catch (_) {
-      // Sans onglets, le catalogue reste utilisable (« Tout »).
+      // Sans onglets, le catalogue reste utilisable (« Tout ») ; nouvel essai au prochain rafraîchissement.
+    } finally {
+      _tabsLoading = false;
     }
   }
 
@@ -157,9 +167,15 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
       color: cat.color,
       onRefresh: () async {
         setState(_load);
-        await _products.catchError((_) => <Product>[]);
+        await Future.wait([
+          _products.catchError((_) => <Product>[]),
+          if (_vertical) _loadTabs(),
+        ]);
       },
-      onRetry: () => setState(_load),
+      onRetry: () {
+        setState(_load);
+        if (_vertical) _loadTabs();
+      },
     );
 
     return Scaffold(
@@ -290,7 +306,7 @@ class _ProductGrid extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.all(32),
                 child: Column(children: [
-                  Text(snapshot.error.toString(), textAlign: TextAlign.center),
+                  Text(PagedLoader.messageOf(snapshot.error), textAlign: TextAlign.center),
                   TextButton(onPressed: onRetry, child: const Text('Réessayer')),
                 ]),
               ),

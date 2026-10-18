@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/delivery.dart';
+import '../../services/push_service.dart';
 import '../../utils/colors.dart';
 import '../../widgets/photos.dart';
 import '../chat/quick_request_screen.dart';
@@ -41,10 +42,17 @@ class _MainScreenState extends State<MainScreen> {
   final _homeKey = GlobalKey<HomeScreenState>();
   final _trackingKey = GlobalKey<PlisColisScreenState>();
 
+  /// Anti double-appui sur « Livrer » : un seul formulaire ouvert.
+  bool _starting = false;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _resumePhotos());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _resumePhotos();
+      // Notification touchée avant la connexion : ouverte une fois l'accueil affiché.
+      PushService.openPending();
+    });
   }
 
   /// Android a fermé l'app pendant une prise de vue : on rouvre l'envoi par photo avec les photos déjà prises.
@@ -52,7 +60,11 @@ class _MainScreenState extends State<MainScreen> {
     final photos = await PhotoDraft.recover();
     if (photos.isEmpty || !mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text("Le téléphone a fermé l'application pendant la photo : vos photos ont été gardées."),
+      duration: Duration(seconds: 8),
+      content: Text(
+        "Le téléphone a fermé l'application pendant la photo : vos photos ont été gardées. "
+        "Envoyez-les à l'agence ou recommencez le formulaire.",
+      ),
     ));
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => QuickRequestScreen(initialPhotos: photos)),
@@ -67,7 +79,13 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Future<void> _startDelivery() async {
-    await MainScreen.startDelivery(context);
+    if (_starting) return;
+    _starting = true;
+    try {
+      await MainScreen.startDelivery(context);
+    } finally {
+      _starting = false;
+    }
     if (!mounted) return;
     _homeKey.currentState?.reload();
     _trackingKey.currentState?.reload();
@@ -82,12 +100,19 @@ class _MainScreenState extends State<MainScreen> {
       const ProfileScreen(),
     ];
 
-    return Scaffold(
-      body: IndexedStack(index: _currentIndex, children: screens),
-      bottomNavigationBar: _FloatingNavBar(
-        currentIndex: _currentIndex,
-        onTap: _goTo,
-        onAction: _startDelivery,
+    // Retour Android sur un autre onglet : revient d'abord à l'Accueil au lieu de quitter l'app.
+    return PopScope(
+      canPop: _currentIndex == MainScreen.tabHome,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _goTo(MainScreen.tabHome);
+      },
+      child: Scaffold(
+        body: IndexedStack(index: _currentIndex, children: screens),
+        bottomNavigationBar: _FloatingNavBar(
+          currentIndex: _currentIndex,
+          onTap: _goTo,
+          onAction: _startDelivery,
+        ),
       ),
     );
   }

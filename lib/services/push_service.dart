@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../models/user.dart';
+import 'api_client.dart';
 import 'delivery_service.dart';
 
 /// Ouvre l'écran correspondant aux données d'une notification (livraison, discussion…).
@@ -32,6 +33,10 @@ class PushService {
   /// Identifiants des livraisons mises à jour (push reçu app ouverte) : les écrans ouverts se rafraîchissent.
   static final _deliveryUpdates = StreamController<int>.broadcast();
   static Stream<int> get deliveryUpdates => _deliveryUpdates.stream;
+
+  /// Identifiants des discussions ayant reçu un message (push reçu app ouverte) : badges et chat se rafraîchissent.
+  static final _chatUpdates = StreamController<int>.broadcast();
+  static Stream<int> get chatUpdates => _chatUpdates.stream;
 
   static const _urgent = AndroidNotificationChannel(
     'voom_urgent',
@@ -94,6 +99,8 @@ class PushService {
   static void _showForeground(RemoteMessage message) {
     final deliveryId = deliveryIdOf(message.data);
     if (deliveryId != null) _deliveryUpdates.add(deliveryId);
+    final requestId = requestIdOf(message.data);
+    if (message.data['type']?.toString() == 'chat' && requestId != null) _chatUpdates.add(requestId);
 
     final n = message.notification;
     if (n == null) return;
@@ -140,18 +147,48 @@ class PushService {
     if (pending != null) onOpen?.call(pending);
   }
 
+  /// Notification gardée en attente (ex. touchée alors que personne n'était connecté) : ouverte par [openPending].
+  static void keepPending(Map<String, dynamic> data) => _pending = data;
+
+  /// Écran d'accueil affiché après connexion : ouvre la notification restée en attente.
+  static void openPending() {
+    if (!_appReady) return;
+    final pending = _pending;
+    _pending = null;
+    if (pending != null) onOpen?.call(pending);
+  }
+
+  /// Signale aux écrans ouverts qu'une livraison / une discussion a changé (ils se rechargent).
+  static void notifyDeliveryUpdated(int id) => _deliveryUpdates.add(id);
+  static void notifyChatUpdated(int id) => _chatUpdates.add(id);
+
+  static Timer? _retry;
+  static int _retryCount = 0;
+
   /// Après connexion : autorisation, envoi du jeton au serveur et abonnement aux annonces.
+  /// Chaque étape est indépendante : l'échec de l'une n'empêche pas les suivantes.
   static Future<void> register(User user, DeliveryService deliveries) async {
     if (!_ready) return;
+    _retry?.cancel();
+    _retryCount = 0;
+    final messaging = FirebaseMessaging.instance;
     try {
-      final messaging = FirebaseMessaging.instance;
       await messaging.requestPermission();
-      final token = await messaging.getToken();
-      if (token != null) await deliveries.registerDeviceToken(token);
+    } catch (e) {
+      debugPrint('Autorisation des notifications impossible : $e');
+    }
+
+    await _sendToken(deliveries);
+
+    try {
       await _tokenRefresh?.cancel();
       _tokenRefresh =
           messaging.onTokenRefresh.listen((t) => deliveries.registerDeviceToken(t).catchError((_) {}));
+    } catch (e) {
+      debugPrint('Suivi du jeton de notification impossible : $e');
+    }
 
+    try {
       if (user.isCourier) {
         await messaging.subscribeToTopic('couriers');
         await messaging.unsubscribeFromTopic('clients');
@@ -160,12 +197,31 @@ class PushService {
         await messaging.unsubscribeFromTopic('couriers');
       }
     } catch (e) {
-      debugPrint('Enregistrement des notifications impossible : $e');
+      debugPrint('Abonnement aux annonces impossible : $e');
+    }
+  }
+
+  /// Envoie le jeton de l'appareil au serveur ; en cas d'échec (réseau, serveur en veille), nouvel essai différé.
+  static Future<void> _sendToken(DeliveryService deliveries) async {
+    try {
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token != null) await deliveries.registerDeviceToken(token);
+      _retryCount = 0;
+    } catch (e) {
+      debugPrint('Jeton de notification non enregistré : $e');
+      // Session refusée : inutile d'insister.
+      if (e is ApiException && e.isUnauthorized) return;
+      if (_retryCount >= 5) return;
+      _retryCount++;
+      _retry?.cancel();
+      _retry = Timer(Duration(seconds: 30 * _retryCount), () => _sendToken(deliveries));
     }
   }
 
   /// Déconnexion : plus d'annonces pour ce compte sur cet appareil.
   static Future<void> unregister() async {
+    _retry?.cancel();
+    _retry = null;
     if (!_ready) return;
     try {
       await _tokenRefresh?.cancel();

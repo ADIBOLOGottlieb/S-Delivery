@@ -9,10 +9,21 @@ use App\Http\Controllers\Admin\RequestController;
 use App\Http\Controllers\Admin\SubcategoryController;
 use App\Http\Controllers\Admin\SettingController;
 use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\LegalController;
 use App\Http\Controllers\MediaController;
 use Illuminate\Support\Facades\Route;
 
+// Identifiants de route numériques : « /admin/deliveries/abc » répond 404 au lieu d'une erreur SQL.
+Route::patterns([
+    'delivery' => '[0-9]+', 'payment' => '[0-9]+', 'deliveryRequest' => '[0-9]+', 'courier' => '[0-9]+',
+    'client' => '[0-9]+', 'product' => '[0-9]+', 'promotion' => '[0-9]+', 'subcategory' => '[0-9]+',
+]);
+
 Route::redirect('/', '/admin');
+
+// Pages publiques (exigences Google Play) : politique de confidentialité et suppression de compte.
+Route::get('/confidentialite', [LegalController::class, 'privacy'])->name('legal.privacy');
+Route::get('/compte/suppression', [LegalController::class, 'accountDeletion'])->name('legal.account-deletion');
 
 // Images envoyées depuis l'app (profil, articles, chat), stockées en base.
 Route::get('/media/{uuid}', [MediaController::class, 'show'])->whereUuid('uuid')->name('media.show');
@@ -21,7 +32,7 @@ Route::get('/media/{uuid}', [MediaController::class, 'show'])->whereUuid('uuid')
 Route::prefix('admin')->name('admin.')->group(function () {
     Route::middleware('guest')->group(function () {
         Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
-        Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
+        Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:admin-login');
     });
 
     Route::middleware(['auth', 'role:admin'])->group(function () {

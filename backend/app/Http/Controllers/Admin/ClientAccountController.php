@@ -5,10 +5,12 @@ namespace App\Http\Controllers\Admin;
 use App\Enums\Role;
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Support\Identifier;
 use App\Support\Phone;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
@@ -18,8 +20,8 @@ use Illuminate\View\View;
  */
 class ClientAccountController extends Controller
 {
-    /** Au-delà, la requête dépasse le délai de Render (un mot de passe haché par client). */
-    private const MAX_IMPORT_ROWS = 300;
+    /** Au-delà, la requête risque de dépasser le délai de Render (un mot de passe haché par client). */
+    public const MAX_IMPORT_ROWS = 100;
 
     public function create(): View
     {
@@ -28,11 +30,15 @@ class ClientAccountController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
+        // Email enregistré en minuscules : unicité et connexion insensibles à la casse.
+        if (is_string($request->input('email'))) {
+            $request->merge(['email' => Identifier::email($request->input('email'))]);
+        }
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'phone_number' => ['required', 'string', 'max:30'],
             'district' => ['nullable', 'string', 'max:120'],
-            'email' => ['nullable', 'email', 'max:255', 'unique:users,email'],
+            'email' => ['nullable', 'email', 'max:255', Identifier::uniqueEmail()],
         ]);
 
         if (! Phone::isValid($data['phone_number'])) {
@@ -71,6 +77,24 @@ class ClientAccountController extends Controller
                 .self::MAX_IMPORT_ROWS.' clients maximum par import. Découpez-le en plusieurs fichiers et importez-les un par un.']);
         }
 
+        // Un mot de passe haché par client : on laisse le temps nécessaire.
+        set_time_limit(120);
+
+        // Tout ou rien : si la requête échoue en cours de route, aucun compte n'est créé,
+        // donc aucun mot de passe (affiché une seule fois) n'est perdu. Il suffit de relancer l'import.
+        [$created, $skipped] = DB::transaction(fn () => $this->importRows($rows));
+
+        return redirect()->route('admin.clients.credentials')
+            ->with('credentials', $created)
+            ->with('skipped', $skipped);
+    }
+
+    /**
+     * @param  array<int, array{name: string, phone: string, district: string}>  $rows
+     * @return array{0: list<array<string, string>>, 1: list<array<string, string>>} comptes créés, lignes ignorées
+     */
+    private function importRows(array $rows): array
+    {
         $existing = User::pluck('phone_number')->map(fn ($p) => Phone::normalize((string) $p))->flip();
         $created = [];
         $skipped = [];
@@ -100,15 +124,13 @@ class ClientAccountController extends Controller
             $created[] = ['name' => $name, 'phone' => $phone, 'password' => $password];
         }
 
-        return redirect()->route('admin.clients.credentials')
-            ->with('credentials', $created)
-            ->with('skipped', $skipped);
+        return [$created, $skipped];
     }
 
     /** Nouveau mot de passe (client qui a oublié le sien) : les sessions ouvertes sont fermées. */
     public function resetPassword(User $client): RedirectResponse
     {
-        abort_unless($client->isClient(), 404);
+        abort_unless($client->isClient() && ! $client->isAnonymized(), 404);
 
         $password = $this->generatePassword();
         $client->forceFill(['password' => $password])->save();

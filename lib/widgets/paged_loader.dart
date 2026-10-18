@@ -7,9 +7,11 @@ import '../utils/colors.dart';
 /// Liste paginée rechargeable : garde les anciennes données pendant le rechargement
 /// (pas de spinner plein écran), distingue erreur et liste vide, et charge la page suivante (« Voir plus »).
 class PagedLoader<T> extends ChangeNotifier {
-  PagedLoader(this._fetch);
+  /// [idOf] : identifiant d'un élément, pour dédoublonner et garder les pages déjà chargées au rechargement.
+  PagedLoader(this._fetch, {Object? Function(T item)? idOf}) : _idOf = idOf;
 
   final Future<PageResult<T>> Function(int page) _fetch;
+  final Object? Function(T item)? _idOf;
 
   /// null tant que la première page n'a jamais été reçue.
   List<T>? items;
@@ -20,8 +22,12 @@ class PagedLoader<T> extends ChangeNotifier {
   bool loadingMore = false;
   bool hasMore = false;
   int _page = 1;
+
+  /// Nombre d'éléments venus de la 1re page (le reste vient de « Voir plus »).
+  int _firstPageCount = 0;
   int _generation = 0;
   bool _disposed = false;
+  Future<void>? _refreshing;
 
   /// Message lisible d'une erreur quelconque.
   static String messageOf(Object? e) =>
@@ -33,9 +39,16 @@ class PagedLoader<T> extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
-  /// Recharge la première page. Sans effet si un rechargement est déjà en cours.
-  Future<void> refresh() async {
-    if (loading) return;
+  /// Recharge la première page ; un rechargement déjà en cours est partagé (même Future).
+  /// Avec [keepPages] (par défaut), les pages suivantes déjà chargées sont gardées et fusionnées.
+  Future<void> refresh({bool keepPages = true}) => _refreshing ??= _doRefresh(keepPages).whenComplete(() {
+        _refreshing = null;
+      });
+
+  /// Recharge depuis la 1re page seulement (tirer pour rafraîchir).
+  Future<void> reset() => refresh(keepPages: false);
+
+  Future<void> _doRefresh(bool keepPages) async {
     final generation = ++_generation;
     loading = true;
     loadingMore = false;
@@ -43,9 +56,18 @@ class PagedLoader<T> extends ChangeNotifier {
     try {
       final page = await _fetch(1);
       if (generation != _generation) return;
-      items = page.items;
-      _page = page.page;
-      hasMore = page.hasMore;
+      final idOf = _idOf;
+      final old = items;
+      if (keepPages && idOf != null && old != null && _page > 1 && old.length > _firstPageCount) {
+        // Pages 2+ déjà affichées : on remplace seulement la 1re page.
+        final ids = {for (final item in page.items) idOf(item)};
+        items = [...page.items, ...old.skip(_firstPageCount).where((item) => !ids.contains(idOf(item)))];
+      } else {
+        items = _dedupe(page.items);
+        _page = page.page;
+        hasMore = page.hasMore;
+      }
+      _firstPageCount = page.items.length;
       error = null;
     } catch (e) {
       if (generation == _generation) error = e;
@@ -55,6 +77,14 @@ class PagedLoader<T> extends ChangeNotifier {
         _notify();
       }
     }
+  }
+
+  /// Retire les doublons (un élément peut glisser d'une page à l'autre entre deux appels).
+  List<T> _dedupe(List<T> list) {
+    final idOf = _idOf;
+    if (idOf == null) return list;
+    final seen = <Object?>{};
+    return [for (final item in list) if (seen.add(idOf(item))) item];
   }
 
   /// Page suivante, ajoutée à la fin de la liste.
@@ -67,7 +97,7 @@ class PagedLoader<T> extends ChangeNotifier {
       final page = await _fetch(_page + 1);
       // Liste rechargée entre-temps : cette page n'est plus valable.
       if (generation != _generation) return;
-      items = [...?items, ...page.items];
+      items = _dedupe([...?items, ...page.items]);
       _page = page.page;
       hasMore = page.hasMore;
       error = null;

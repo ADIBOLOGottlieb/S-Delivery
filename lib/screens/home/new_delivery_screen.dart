@@ -314,9 +314,42 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
     });
   }
 
+  /// Saisies faites par le client (hors position et coordonnées remplies d'office), perdues en quittant le formulaire.
+  bool get _hasTypedData {
+    final user = context.read<AuthService>().user;
+    final here = _here?.point;
+    bool typed(TextEditingController c, [String? prefilled]) {
+      final text = c.text.trim();
+      return text.isNotEmpty && text != prefilled;
+    }
+
+    return (_pickup != null && _pickup != here) ||
+        (_dropoff != null && _dropoff != here) ||
+        typed(_pickupName, user?.name) ||
+        typed(_pickupPhone, user?.phoneNumber) ||
+        typed(_recipientName, user?.name) ||
+        typed(_recipientPhone, user?.phoneNumber) ||
+        typed(_description) ||
+        typed(_notes);
+  }
+
   /// Programmation par photo : ouverte à tout client connecté, au même titre que le formulaire.
-  /// Les photos déjà jointes au formulaire sont reprises.
-  void _openPhotoProgramming() {
+  /// Les photos déjà jointes au formulaire sont reprises ; les autres saisies sont perdues (confirmation).
+  Future<void> _openPhotoProgramming() async {
+    if (_hasTypedData) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Passer à la programmation par photo ?'),
+          content: const Text('Vos informations saisies seront perdues, seules les photos sont gardées.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Rester ici')),
+            ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Continuer')),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+    }
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => QuickRequestScreen(initialPhotos: List.of(_photos))),
     );
@@ -464,32 +497,37 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
     };
 
     setState(() => _submitting = true);
+    final service = context.read<DeliveryService>();
+    final Delivery delivery;
     try {
-      final service = context.read<DeliveryService>();
-      final delivery = await service.createDelivery(payload);
-
-      // Photos envoyées une à une : un échec n'annule pas la demande déjà créée.
-      var failed = 0;
-      for (final path in _photos) {
-        try {
-          await service.addDeliveryPhoto(delivery.id, path);
-        } on ApiException {
-          failed++;
-        }
-      }
-      if (!mounted) return;
-      messenger.showSnackBar(SnackBar(
-        content: Text(failed == 0
-            ? 'Demande créée. Effectuez le paiement pour la confirmer.'
-            : 'Demande créée, mais $failed photo(s) non envoyée(s).'),
-        backgroundColor: failed == 0 ? AppColors.success : AppColors.warning,
-      ));
-      Navigator.of(context).pop(delivery);
+      delivery = await service.createDelivery(payload);
     } on ApiException catch (e) {
       error(e.message);
-    } finally {
       if (mounted) setState(() => _submitting = false);
+      return;
+    } catch (_) {
+      error('Une erreur est survenue. Vérifiez dans Suivi avant de recommencer.');
+      if (mounted) setState(() => _submitting = false);
+      return;
     }
+
+    // Livraison créée : l'écran se ferme avec elle quoi qu'il arrive aux photos (pas de double commande).
+    var failed = 0;
+    for (final path in _photos) {
+      try {
+        await service.addDeliveryPhoto(delivery.id, path);
+      } catch (_) {
+        failed++;
+      }
+    }
+    if (!mounted) return;
+    messenger.showSnackBar(SnackBar(
+      content: Text(failed == 0
+          ? 'Demande créée. Effectuez le paiement pour la confirmer.'
+          : 'Demande créée. $failed photo(s) non envoyée(s), ajoutez-les depuis le suivi.'),
+      backgroundColor: failed == 0 ? AppColors.success : AppColors.warning,
+    ));
+    Navigator.of(context).pop(delivery);
   }
 
   @override
@@ -697,7 +735,7 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
           children: [
             ElevatedButton(
               onPressed: _submitting ? null : _submit,
-              child: _submitting ? const ButtonProgress() : Text(_isOrder ? 'Valider la commande' : 'Commander'),
+              child: _submitting ? const ButtonProgress() : Text(_isOrder ? 'Valider la commande' : 'Commander · payer ensuite'),
             ),
           ],
         ),

@@ -4,9 +4,12 @@ namespace App\Http\Controllers\Admin;
 
 use App\Enums\Role;
 use App\Http\Controllers\Controller;
+use App\Models\User;
+use App\Support\Identifier;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
@@ -24,12 +27,17 @@ class AuthController extends Controller
             'password' => ['required', 'string'],
         ]);
 
-        $attempt = [...$credentials, 'role' => Role::Admin->value, 'is_active' => true];
+        // Email sans tenir compte de la casse (ADMIN_EMAIL a pu être saisi avec des majuscules).
+        $admin = User::whereRaw('lower(email) = ?', [Identifier::email($credentials['email'])])
+            ->where('role', Role::Admin->value)
+            ->where('is_active', true)
+            ->first();
 
-        if (! Auth::attempt($attempt, $request->boolean('remember'))) {
+        if (! $admin || ! Hash::check($credentials['password'], $admin->password)) {
             throw ValidationException::withMessages(['email' => 'Identifiants administrateur incorrects.']);
         }
 
+        Auth::guard('web')->login($admin, $request->boolean('remember'));
         $request->session()->regenerate();
 
         return redirect()->intended(route('admin.dashboard'));

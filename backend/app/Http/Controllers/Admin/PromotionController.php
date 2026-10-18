@@ -99,7 +99,7 @@ class PromotionController extends Controller
         $data = $request->validate([
             'title' => ['required', 'string', 'max:80'],
             'body' => ['required', 'string', 'max:255'],
-            'product_id' => ['nullable', 'exists:products,id'],
+            'product_id' => ['bail', 'nullable', 'integer', 'exists:products,id'],
             'starts_at' => ['nullable', 'date'],
             'ends_at' => ['nullable', 'date', 'after_or_equal:starts_at'],
             'image' => ['nullable', 'image', 'max:4096'],

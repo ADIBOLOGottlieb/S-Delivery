@@ -35,6 +35,7 @@ class PaymentService
             if (! $fresh->canSubmitPayment()) {
                 throw ValidationException::withMessages(['payment' => 'Un paiement est déjà en cours de vérification ou confirmé.']);
             }
+            Payment::lockReference($method, $reference);
             if (Payment::referenceInUse($method, $reference)) {
                 throw ValidationException::withMessages(['transaction_ref' => 'Cette référence de transaction a déjà été utilisée.']);
             }
@@ -65,6 +66,9 @@ class PaymentService
             $fresh = $delivery->lockFresh();
             if ($fresh->status === DeliveryStatus::Cancelled || $fresh->payment_status === PaymentStatus::Verified) {
                 throw ValidationException::withMessages(['payment' => 'Livraison annulée ou déjà payée.']);
+            }
+            if ($reference !== null) {
+                Payment::lockReference($method, $reference);
             }
             if ($reference !== null && Payment::referenceInUse($method, $reference)) {
                 throw ValidationException::withMessages(['reference' => 'Cette référence de transaction a déjà été utilisée.']);

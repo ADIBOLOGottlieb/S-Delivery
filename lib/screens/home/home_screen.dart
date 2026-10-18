@@ -29,7 +29,8 @@ class HomeScreen extends StatefulWidget {
 
 class HomeScreenState extends State<HomeScreen> {
   // Livraisons récentes : les anciennes restent affichées pendant le rechargement.
-  late final _recent = PagedLoader<Delivery>((page) => context.read<PagedApi>().myDeliveries(page: page));
+  late final _recent =
+      PagedLoader<Delivery>((page) => context.read<PagedApi>().myDeliveries(page: page), idOf: (d) => d.id);
   late Future<List<Promotion>> _promos;
 
   @override
@@ -51,21 +52,42 @@ class HomeScreenState extends State<HomeScreen> {
 
   void reload() => setState(_load);
 
+  /// Tirer pour rafraîchir : attend vraiment la fin des chargements (un seul rechargement de la liste).
   Future<void> _refresh() async {
     final auth = context.read<AuthService>();
-    setState(_load);
-    await Future.wait([_recent.refresh(), auth.refreshProfile()]);
+    final promos = context.read<DeliveryService>().promotions().catchError((_) => <Promotion>[]);
+    setState(() => _promos = promos);
+    await Future.wait([_recent.reset(), auth.refreshProfile(), promos]);
   }
 
-  Future<void> _newDelivery(DeliveryType type) async {
-    final created = await Navigator.of(context).push<Delivery>(
-      MaterialPageRoute(builder: (_) => NewDeliveryScreen(initialType: type)),
-    );
-    if (created != null && mounted) {
-      setState(_load);
-      Navigator.of(context).push(MaterialPageRoute(builder: (_) => DeliveryDetailScreen(deliveryId: created.id)));
+  /// Anti double-appui : un seul écran ouvert à la fois depuis les tuiles.
+  bool _opening = false;
+
+  Future<void> _guarded(Future<void> Function() open) async {
+    if (_opening) return;
+    _opening = true;
+    try {
+      await open();
+    } finally {
+      _opening = false;
     }
   }
+
+  Future<void> _newDelivery(DeliveryType type) => _guarded(() async {
+        final created = await Navigator.of(context).push<Delivery>(
+          MaterialPageRoute(builder: (_) => NewDeliveryScreen(initialType: type)),
+        );
+        if (created != null && mounted) {
+          setState(_load);
+          await Navigator.of(context)
+              .push(MaterialPageRoute(builder: (_) => DeliveryDetailScreen(deliveryId: created.id)));
+        }
+      });
+
+  Future<void> _openDelivery(Delivery d) => _guarded(() async {
+        await Navigator.of(context).push(MaterialPageRoute(builder: (_) => DeliveryDetailScreen(deliveryId: d.id)));
+        if (mounted) _recent.refresh();
+      });
 
   @override
   Widget build(BuildContext context) {
@@ -225,15 +247,7 @@ class HomeScreenState extends State<HomeScreen> {
                   return Column(
                     children: [
                       for (final d in items)
-                        DeliveryCard(
-                          delivery: d,
-                          onTap: () async {
-                            await Navigator.of(context).push(
-                              MaterialPageRoute(builder: (_) => DeliveryDetailScreen(deliveryId: d.id)),
-                            );
-                            if (mounted) _recent.refresh();
-                          },
-                        ),
+                        DeliveryCard(delivery: d, onTap: () => _openDelivery(d)),
                     ],
                   );
                 },

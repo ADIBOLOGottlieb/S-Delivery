@@ -16,9 +16,14 @@ mkdir -p storage/app/public storage/app/private storage/framework/cache storage/
 chown -R www-data:www-data storage bootstrap/cache
 
 php artisan storage:link --force >/dev/null 2>&1 || true
+# Une configuration en cache d'un démarrage précédent masquerait les variables d'environnement lues par les seeders.
+php artisan config:clear >/dev/null 2>&1 || true
 php artisan migrate --force
-# Crée / met à jour le compte admin à partir de ADMIN_EMAIL / ADMIN_PASSWORD (pas de données démo en production).
-php artisan db:seed --force
+# Compte admin (ADMIN_EMAIL / ADMIN_PASSWORD) et catalogue de départ, sans données démo en production.
+# Un échec ici ne doit pas empêcher l'API de démarrer : on le journalise et on continue.
+if ! php artisan db:seed --force; then
+  echo "AVERTISSEMENT : db:seed a échoué (voir ci-dessus) ; le serveur démarre quand même." >&2
+fi
 php artisan config:cache
 php artisan route:cache
 php artisan view:cache

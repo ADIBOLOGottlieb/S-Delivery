@@ -3,12 +3,14 @@
 namespace Database\Seeders;
 
 use App\Models\Product;
+use App\Models\Setting;
 use Illuminate\Database\Seeder;
 
 /**
  * Photos réalistes du catalogue Courses alimentaires (CC0 / domaine public, voir
  * public/images/catalog/CREDITS.md), livrées avec l'application : elles survivent aux redéploiements.
- * Une photo envoyée par l'admin n'est jamais remplacée. Rejouable sans risque.
+ * Exécuté une seule fois (réglage « catalog_images_seeded ») : une photo envoyée par l'admin n'est jamais
+ * remplacée, et une photo retirée par l'admin ne revient pas au redéploiement suivant.
  */
 class CatalogImageSeeder extends Seeder
 {
@@ -66,16 +68,28 @@ class CatalogImageSeeder extends Seeder
         'Pack céréales familial' => 'pack-cereales',
     ];
 
+    public const FLAG = 'catalog_images_seeded';
+
     public function run(): void
     {
-        foreach (self::IMAGES as $name => $file) {
-            if (! is_file(public_path("images/catalog/$file.jpg"))) {
-                continue;
-            }
-
-            Product::where('name', $name)->get()
-                ->reject(fn (Product $p) => $p->hasUploadedImage())
-                ->each(fn (Product $p) => $p->update(['image_path' => "catalog/$file.jpg"]));
+        if (Setting::get(self::FLAG)) {
+            return;
         }
+
+        // Base où une version précédente (sans réglage) a déjà posé les photos : on ne repasse pas,
+        // pour ne pas remettre une photo retirée entre-temps par l'admin.
+        if (! Product::where('image_path', 'like', 'catalog/%')->exists()) {
+            foreach (self::IMAGES as $name => $file) {
+                if (! is_file(public_path("images/catalog/$file.jpg"))) {
+                    continue;
+                }
+
+                // Uniquement les produits sans photo : rien n'est jamais remplacé.
+                Product::where('name', $name)->whereNull('image_path')
+                    ->update(['image_path' => "catalog/$file.jpg"]);
+            }
+        }
+
+        Setting::put([self::FLAG => '1']);
     }
 }

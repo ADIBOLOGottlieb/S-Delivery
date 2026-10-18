@@ -79,6 +79,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
     navigator.pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const LoginScreen()), (_) => false);
   }
 
+  /// Politique de confidentialité, ouverte dans le navigateur.
+  Future<void> _openPrivacy() async {
+    final url = await SupportPhone.privacyUrl(context.read<ApiClient>());
+    if (mounted) await openWebPage(context, url);
+  }
+
+  /// Suppression définitive du compte (exigée par Google Play) : explication, mot de passe, puis retour à la connexion.
+  Future<void> _deleteAccount() async {
+    final deleted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const _DeleteAccountDialog(),
+    );
+    if (deleted != true || !mounted) return;
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final messenger = ScaffoldMessenger.of(context);
+    navigator.pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const LoginScreen()), (_) => false);
+    messenger.showSnackBar(const SnackBar(content: Text('Votre compte a été supprimé.')));
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthService>().user;
@@ -196,11 +216,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 onTap: () => callPhone(context, _supportPhone!),
               ),
             ),
-          const Card(
-            child: ListTile(
-              leading: Icon(Icons.info_outline),
-              title: Text('À propos'),
-              subtitle: Text('VOOM Delivery · Lomé, Togo · v1.1.0'),
+          Card(
+            child: Column(
+              children: [
+                const ListTile(
+                  leading: Icon(Icons.info_outline),
+                  title: Text('À propos'),
+                  subtitle: Text('VOOM Delivery · Lomé, Togo · v1.2.0'),
+                ),
+                const Divider(height: 1, indent: 16, endIndent: 16),
+                ListTile(
+                  leading: const Icon(Icons.privacy_tip_outlined),
+                  title: const Text('Politique de confidentialité'),
+                  trailing: const Icon(Icons.open_in_new, size: 20),
+                  onTap: _openPrivacy,
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 24),
@@ -210,8 +241,117 @@ class _ProfileScreenState extends State<ProfileScreen> {
             label: const Text('Se déconnecter', style: TextStyle(color: AppColors.error)),
             style: OutlinedButton.styleFrom(side: const BorderSide(color: AppColors.error)),
           ),
+          const SizedBox(height: 32),
+          Card(
+            color: AppColors.error.withValues(alpha: 0.06),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: AppColors.error.withValues(alpha: 0.4)),
+            ),
+            child: ListTile(
+              leading: const Icon(Icons.delete_forever_outlined, color: AppColors.error),
+              title: const Text('Supprimer mon compte', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.w700)),
+              subtitle: const Text('Définitif : vos données personnelles sont effacées.'),
+              onTap: _deleteAccount,
+            ),
+          ),
         ],
       ),
+    );
+  }
+}
+
+/// Dialogue de suppression du compte : conséquences expliquées et mot de passe demandé.
+class _DeleteAccountDialog extends StatefulWidget {
+  const _DeleteAccountDialog();
+
+  @override
+  State<_DeleteAccountDialog> createState() => _DeleteAccountDialogState();
+}
+
+class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
+  final _password = TextEditingController();
+  bool _busy = false;
+  bool _obscure = true;
+  String? _error;
+
+  @override
+  void dispose() {
+    _password.dispose();
+    super.dispose();
+  }
+
+  Future<void> _confirm() async {
+    if (_password.text.isEmpty) {
+      setState(() => _error = 'Saisissez votre mot de passe.');
+      return;
+    }
+    final auth = context.read<AuthService>();
+    final navigator = Navigator.of(context);
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await auth.deleteAccount(_password.text);
+      navigator.pop(true);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } catch (_) {
+      if (mounted) setState(() => _error = 'Une erreur est survenue. Réessayez.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      icon: const Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 36),
+      title: const Text('Supprimer mon compte ?'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Cette action est définitive : vous ne pourrez plus vous connecter avec ce compte.\n\n'
+              'Vos données personnelles (nom, téléphone, email, photo) sont effacées. '
+              "L'historique des livraisons est conservé de façon anonyme pour la comptabilité de l'agence.\n\n"
+              'Impossible tant qu\'une livraison est en cours.',
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _password,
+              obscureText: _obscure,
+              enabled: !_busy,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: 'Mot de passe',
+                prefixIcon: const Icon(Icons.lock_outline),
+                errorText: _error,
+                errorMaxLines: 4,
+                suffixIcon: IconButton(
+                  tooltip: _obscure ? 'Afficher' : 'Masquer',
+                  icon: Icon(_obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                  onPressed: () => setState(() => _obscure = !_obscure),
+                ),
+              ),
+              onSubmitted: (_) => _busy ? null : _confirm(),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: _busy ? null : () => Navigator.pop(context, false), child: const Text('Annuler')),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(backgroundColor: AppColors.error, foregroundColor: Colors.white),
+          onPressed: _busy ? null : _confirm,
+          child: _busy
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              : const Text('Supprimer'),
+        ),
+      ],
     );
   }
 }

@@ -117,17 +117,34 @@ class PaymentInfo {
   /// Numéro de l'agence (null tant que l'admin ne l'a pas renseigné).
   final String? supportPhone;
 
-  const PaymentInfo({required this.merchantName, this.instructions, required this.methods, this.supportPhone});
+  /// Pages publiques (URL absolues) ; null si le serveur ne les fournit pas encore.
+  final String? privacyUrl;
+  final String? accountDeletionUrl;
+
+  const PaymentInfo({
+    required this.merchantName,
+    this.instructions,
+    required this.methods,
+    this.supportPhone,
+    this.privacyUrl,
+    this.accountDeletionUrl,
+  });
 
   factory PaymentInfo.fromJson(Map<String, dynamic> json) {
-    final phone = (json['support_phone'] as String?)?.trim();
+    String? text(String key) {
+      final value = json[key];
+      return value is String && value.trim().isNotEmpty ? value.trim() : null;
+    }
+
     return PaymentInfo(
       merchantName: json['merchant_name'] as String? ?? 'VOOM Delivery',
       instructions: json['instructions'] as String?,
       methods: (json['methods'] as List? ?? const [])
           .map((m) => PaymentMethodInfo.fromJson(m as Map<String, dynamic>))
           .toList(),
-      supportPhone: phone == null || phone.isEmpty ? null : phone,
+      supportPhone: text('support_phone'),
+      privacyUrl: text('privacy_url'),
+      accountDeletionUrl: text('account_deletion_url'),
     );
   }
 }

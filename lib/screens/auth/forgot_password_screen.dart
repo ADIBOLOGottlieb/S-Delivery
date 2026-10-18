@@ -41,18 +41,40 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   void _error(String message) => ScaffoldMessenger.of(context)
       .showSnackBar(SnackBar(content: Text(message), backgroundColor: AppColors.error));
 
+  /// Étape 1 ou « Renvoyer le code » : seul l'identifiant est vérifié (pas le code ni les mots de passe).
   Future<void> _sendCode() async {
-    if (!_formKey.currentState!.validate()) return;
+    final login = _login.text.trim();
+    if (login.isEmpty) {
+      _error('Saisissez votre email ou téléphone');
+      return;
+    }
+    final resend = _sentTo != null;
+    final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
-      final email = await context.read<AuthService>().sendResetCode(_login.text.trim());
+      final email = await context.read<AuthService>().sendResetCode(login);
       if (!mounted) return;
-      setState(() => _sentTo = email);
+      setState(() {
+        _sentTo = email;
+        // Ancien code périmé : le champ est vidé pour saisir le nouveau.
+        _code.clear();
+      });
+      if (resend) messenger.showSnackBar(const SnackBar(content: Text('Nouveau code envoyé.')));
     } on ApiException catch (e) {
       if (mounted) _error(e.message);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// Retour à l'étape 1 pour corriger l'identifiant.
+  void _changeLogin() {
+    setState(() {
+      _sentTo = null;
+      _code.clear();
+      _password.clear();
+      _confirm.clear();
+    });
   }
 
   Future<void> _reset() async {
@@ -101,7 +123,11 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(sent
-                        ? 'Code envoyé à $_sentTo. Il est valable 15 minutes (pensez aux spams).'
+                        ? (_sentTo!.isEmpty
+                            // Réponse générique du serveur (il ne dit pas si le compte existe).
+                            ? "Si ce compte existe et possède un email, un code y a été envoyé. "
+                                "Il est valable 15 minutes (pensez aux spams)."
+                            : 'Code envoyé à $_sentTo. Il est valable 15 minutes (pensez aux spams).')
                         : "Nous envoyons un code à l'email de votre compte. "
                             "Pas d'email enregistré ? Contactez l'agence."),
                   ),
@@ -151,9 +177,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 validator: (v) => v != _password.text ? 'Les mots de passe ne correspondent pas' : null,
               ),
               const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(onPressed: _busy ? null : _sendCode, child: const Text('Renvoyer le code')),
+              Wrap(
+                spacing: 8,
+                children: [
+                  TextButton(onPressed: _busy ? null : _sendCode, child: const Text('Renvoyer le code')),
+                  TextButton(onPressed: _busy ? null : _changeLogin, child: const Text("Changer d'identifiant")),
+                ],
               ),
             ] else ...[
               const SizedBox(height: 8),

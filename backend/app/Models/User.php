@@ -28,7 +28,14 @@ class User extends Authenticatable
             'password' => 'hashed',
             'role' => Role::class,
             'is_active' => 'boolean',
+            'anonymized_at' => 'datetime',
         ];
+    }
+
+    /** Compte supprimé par son titulaire : ne peut plus être réactivé. */
+    public function isAnonymized(): bool
+    {
+        return $this->anonymized_at !== null;
     }
 
     public function avatar(): BelongsTo

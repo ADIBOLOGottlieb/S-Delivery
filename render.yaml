@@ -58,20 +58,23 @@ services:
         sync: false
       - key: ADMIN_PHONE
         sync: false
+      # Mot de passe du compte admin à sa création ; il n'est plus réécrit ensuite.
+      # Pour le réinitialiser : ADMIN_PASSWORD_RESET=true le temps d'un redéploiement, puis le retirer.
       - key: ADMIN_PASSWORD
         sync: false
+      - key: ADMIN_PASSWORD_RESET
+        value: "false"
       # Notifications push : JSON du compte de service Firebase encodé en base64 (gratuit, sans carte).
       - key: FIREBASE_CREDENTIALS
         sync: false
       # Clé des rappels livreurs (même valeur que le secret GitHub CRON_SECRET).
       - key: CRON_SECRET
         generateValue: true
-    # Le disque d'une instance « free » est éphémère : captures de paiement et photos produits
-    # sont perdues à chaque redéploiement. En production, passer en plan payant et ajouter :
-    # disk:
-    #   name: voom-storage
-    #   mountPath: /var/www/html/storage/app
-    #   sizeGB: 1
+    # Photos (produits, colis, chat, profils) et captures de paiement sont stockées dans PostgreSQL
+    # (table media, réduites à 1600 px à l'envoi) : elles survivent aux redéploiements, aucun disque n'est nécessaire.
+    # Seuls d'anciens fichiers antérieurs à ce stockage (storage/app) pourraient manquer après un redéploiement.
+    # Attention : la base « free » de Render est limitée en taille et expire après sa période gratuite
+    # (voir les conditions Render) : passer la base en plan payant avant la mise en production.
 
 databases:
   - name: voom-delivery-db

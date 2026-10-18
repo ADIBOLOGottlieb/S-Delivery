@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/chat.dart';
 import '../../models/delivery.dart';
 import '../../services/paged_api.dart';
+import '../../services/push_service.dart';
 import '../../utils/colors.dart';
 import '../../utils/formatters.dart';
 import '../../widgets/paged_loader.dart';
@@ -19,22 +22,37 @@ class PlisColisScreen extends StatefulWidget {
   State<PlisColisScreen> createState() => PlisColisScreenState();
 }
 
-class PlisColisScreenState extends State<PlisColisScreen> {
+class PlisColisScreenState extends State<PlisColisScreen> with WidgetsBindingObserver {
   late final PagedApi _api = context.read<PagedApi>();
-  late final _deliveries = PagedLoader<Delivery>((page) => _api.myDeliveries(page: page));
-  late final _chats = PagedLoader<ChatRequest>((page) => _api.chatRequests(page: page));
+  late final _deliveries = PagedLoader<Delivery>((page) => _api.myDeliveries(page: page), idOf: (d) => d.id);
+  late final _chats = PagedLoader<ChatRequest>((page) => _api.chatRequests(page: page), idOf: (r) => r.id);
+  StreamSubscription<int>? _deliveryPushes;
+  StreamSubscription<int>? _chatPushes;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
+    // Notification reçue app ouverte : statut des livraisons et badge « Discussions » à jour.
+    _deliveryPushes = PushService.deliveryUpdates.listen((_) => _deliveries.refresh());
+    _chatPushes = PushService.chatUpdates.listen((_) => _chats.refresh());
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _deliveryPushes?.cancel();
+    _chatPushes?.cancel();
     _deliveries.dispose();
     _chats.dispose();
     super.dispose();
+  }
+
+  /// Retour au premier plan : réponses de l'agence ou statuts changés entre-temps.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _load();
   }
 
   /// Recharge en gardant les données affichées (pas de spinner plein écran).
@@ -46,7 +64,8 @@ class PlisColisScreenState extends State<PlisColisScreen> {
   /// Rechargé par la navigation principale à chaque ouverture de l'onglet.
   void reload() => _load();
 
-  Future<void> _refresh() => Future.wait([_deliveries.refresh(), _chats.refresh()]);
+  /// Tirer pour rafraîchir : depuis la première page.
+  Future<void> _refresh() => Future.wait([_deliveries.reset(), _chats.reset()]);
 
   Future<void> _openDelivery(Delivery d) async {
     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => DeliveryDetailScreen(deliveryId: d.id)));

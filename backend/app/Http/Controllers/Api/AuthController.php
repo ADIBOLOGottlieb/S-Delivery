@@ -6,6 +6,7 @@ use App\Enums\Role;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
 use App\Models\User;
+use App\Support\Identifier;
 use App\Support\Phone;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -23,18 +24,20 @@ class AuthController extends Controller
     /** Même clé pour toutes les écritures d'un numéro (ou d'un email). */
     private static function loginThrottleKey(string $login): string
     {
-        $login = trim($login);
-        $identifier = str_contains($login, '@') ? mb_strtolower($login) : Phone::normalize($login);
-
-        return 'login:'.sha1($identifier);
+        return 'login:'.sha1(Identifier::login($login));
     }
 
     /** Inscription publique : uniquement des comptes clients. Les livreurs sont créés par l'admin. */
     public function register(Request $request): JsonResponse
     {
+        // Email enregistré en minuscules : unicité et connexion insensibles à la casse.
+        if (is_string($request->input('email'))) {
+            $request->merge(['email' => Identifier::email($request->input('email'))]);
+        }
+
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['nullable', 'email', 'max:255', 'unique:users,email'],
+            'email' => ['nullable', 'email', 'max:255', Identifier::uniqueEmail()],
             'phone_number' => ['required', 'string', 'max:30'],
             'password' => ['required', 'confirmed', Password::min(8)],
         ]);
@@ -72,11 +75,8 @@ class AuthController extends Controller
             ])->status(429);
         }
 
-        // Le numéro est accepté sous toutes ses écritures (90 11 22 33, 22890112233, +228…).
-        $user = User::query()
-            ->where('email', $data['login'])
-            ->orWhereIn('phone_number', Phone::variants($data['login']))
-            ->first();
+        // Le numéro est accepté sous toutes ses écritures (90 11 22 33, 22890112233, +228…), l'email sans casse.
+        $user = Identifier::findUser($data['login']);
 
         if (! $user || ! Hash::check($data['password'], $user->password)) {
             RateLimiter::hit($key, self::LOGIN_LOCK_SECONDS);

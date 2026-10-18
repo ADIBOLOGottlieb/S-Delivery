@@ -65,9 +65,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
     if (_screenshot == null) return _error("Ajoutez la capture d'écran de la transaction.");
 
     final messenger = ScaffoldMessenger.of(context);
+    final service = context.read<DeliveryService>();
     setState(() => _sending = true);
     try {
-      final updated = await context.read<DeliveryService>().submitPayment(
+      final updated = await service.submitPayment(
             deliveryId: widget.delivery.id,
             method: _method!,
             transactionRef: _refController.text.trim(),
@@ -81,11 +82,30 @@ class _PaymentScreenState extends State<PaymentScreen> {
       ));
       Navigator.of(context).pop(updated);
     } on ApiException catch (e) {
+      // Délai dépassé : la preuve a pu arriver. On relit la livraison avant de proposer de renvoyer.
+      if (e.timedOut && await _proofReceived(service)) return;
       if (mounted) _error(e.message);
     } catch (_) {
       if (mounted) _error("La preuve n'a pas pu être envoyée. Réessayez.");
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  /// Après un délai dépassé : vrai (et écran fermé) si le serveur a bien reçu la preuve.
+  Future<bool> _proofReceived(DeliveryService service) async {
+    try {
+      final d = await service.getDelivery(widget.delivery.id);
+      final received = d.paymentStatus == PaymentStatus.submitted || d.paymentStatus == PaymentStatus.verified;
+      if (!received || !mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text("Preuve bien reçue. Vous serez informé dès que l'agence l'aura vérifiée."),
+        backgroundColor: AppColors.success,
+      ));
+      Navigator.of(context).pop(d);
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 

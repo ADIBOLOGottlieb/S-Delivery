@@ -1,17 +1,20 @@
 # Image de production de l'API VOOM Delivery (Render, runtime Docker).
 FROM php:8.4-apache
 
+# gd (JPEG / PNG / WebP) : réduction des photos à l'envoi ; exif : sens des photos de téléphone.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libpq-dev libzip-dev unzip git \
-    && docker-php-ext-install pdo_pgsql zip opcache \
+    && apt-get install -y --no-install-recommends libpq-dev libzip-dev libjpeg62-turbo-dev libpng-dev libwebp-dev unzip git \
+    && docker-php-ext-configure gd --with-jpeg --with-webp \
+    && docker-php-ext-install pdo_pgsql zip opcache gd exif \
     && a2enmod rewrite headers \
     && rm -rf /var/lib/apt/lists/*
 
 # Apache sert le dossier public/ de Laravel.
+# Envois : 8 Mo par fichier, 40 Mo par requête (jusqu'à 6 photos d'un coup) ; 256 Mo de mémoire suffisent à GD.
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
 RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf \
     && sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf \
-    && printf 'upload_max_filesize=8M\npost_max_size=10M\nmemory_limit=256M\nexpose_php=Off\n' > /usr/local/etc/php/conf.d/voom.ini \
+    && printf 'upload_max_filesize=8M\npost_max_size=40M\nmax_file_uploads=10\nmemory_limit=256M\nexpose_php=Off\n' > /usr/local/etc/php/conf.d/voom.ini \
     && cp /usr/local/etc/php/php.ini-production /usr/local/etc/php/php.ini
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer

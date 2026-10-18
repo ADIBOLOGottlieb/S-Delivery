@@ -26,12 +26,17 @@ class CourierHomeScreen extends StatefulWidget {
 
 class _CourierHomeScreenState extends State<CourierHomeScreen> {
   late final PagedApi _api = context.read<PagedApi>();
-  late final _todo = PagedLoader<Delivery>((page) => _api.courierDeliveries(page: page));
-  late final _history = PagedLoader<Delivery>((page) => _api.courierDeliveries(history: true, page: page));
+  late final _todo = PagedLoader<Delivery>((page) => _api.courierDeliveries(page: page), idOf: (d) => d.id);
+  late final _history = PagedLoader<Delivery>(
+    (page) => _api.courierDeliveries(history: true, page: page),
+    idOf: (d) => d.id,
+  );
 
   @override
   void initState() {
     super.initState();
+    // Notification touchée avant la connexion : ouverte une fois l'espace livreur affiché.
+    WidgetsBinding.instance.addPostFrameCallback((_) => PushService.openPending());
     _todo.refresh();
     _history.refresh();
   }
@@ -104,16 +109,23 @@ class _CourierList extends StatefulWidget {
   State<_CourierList> createState() => _CourierListState();
 }
 
-class _CourierListState extends State<_CourierList> with AutomaticKeepAliveClientMixin {
+class _CourierListState extends State<_CourierList> with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
   Timer? _poll;
   StreamSubscription<int>? _pushes;
 
   @override
   bool get wantKeepAlive => true;
 
+  /// Retour au premier plan : « À faire » est relu tout de suite (sans attendre le prochain cycle).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && !widget.history) widget.loader.refresh();
+  }
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     if (!widget.history) {
       // Nouvelles courses assignées par l'agence : « À faire » se met à jour toute seule.
       _poll = Timer.periodic(const Duration(seconds: 30), (_) {
@@ -137,6 +149,7 @@ class _CourierListState extends State<_CourierList> with AutomaticKeepAliveClien
   void dispose() {
     _poll?.cancel();
     _pushes?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
@@ -150,7 +163,7 @@ class _CourierListState extends State<_CourierList> with AutomaticKeepAliveClien
     super.build(context);
     final loader = widget.loader;
     return RefreshIndicator(
-      onRefresh: loader.refresh,
+      onRefresh: loader.reset,
       child: ListenableBuilder(
         listenable: loader,
         builder: (context, _) {

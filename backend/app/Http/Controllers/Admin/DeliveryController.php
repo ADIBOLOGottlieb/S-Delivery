@@ -54,14 +54,13 @@ class DeliveryController extends Controller
             ->when($filters['status'] ?? null, fn ($q, $s) => $q->where('status', $s))
             ->when($filters['payment_status'] ?? null, fn ($q, $s) => $q->where('payment_status', $s))
             ->when($filters['search'] ?? null, function ($q, $s) {
-                // % et _ tapés par l'admin sont cherchés tels quels, pas comme jokers.
-                $like = '%'.addcslashes($s, '%_\\').'%';
+                // Insensible à la casse ; % et _ tapés par l'admin sont cherchés tels quels, pas comme jokers.
                 $q->where(fn ($q) => $q
-                    ->whereRaw("reference like ? escape '\\'", [$like])
-                    ->orWhereRaw("recipient_phone like ? escape '\\'", [$like])
+                    ->whereContains('deliveries.reference', $s)
+                    ->orWhereContains('deliveries.recipient_phone', $s)
                     ->orWhereHas('client', fn ($q) => $q
-                        ->whereRaw("name like ? escape '\\'", [$like])
-                        ->orWhereRaw("phone_number like ? escape '\\'", [$like])));
+                        ->whereContains('users.name', $s)
+                        ->orWhereContains('users.phone_number', $s)));
             })
             ->latest()
             ->paginate(25)
@@ -86,7 +85,7 @@ class DeliveryController extends Controller
 
     public function assign(Request $request, Delivery $delivery): RedirectResponse
     {
-        $data = $request->validate(['courier_id' => ['required', 'exists:users,id']]);
+        $data = $request->validate(['courier_id' => ['bail', 'required', 'integer', 'exists:users,id']]);
 
         $before = $delivery->courier_id;
         $previous = $delivery->assignTo(User::findOrFail($data['courier_id']));

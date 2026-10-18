@@ -17,4 +17,8 @@ class ApiConfig {
 
   /// Large : le serveur Render gratuit peut mettre 30 à 60 s à sortir de veille.
   static const Duration timeout = Duration(seconds: 60);
+
+  /// Pages publiques par défaut (si GET /payment-info ne fournit pas privacy_url / account_deletion_url).
+  static String get privacyUrl => '$serverRoot/confidentialite';
+  static String get accountDeletionUrl => '$serverRoot/compte/suppression';
 }

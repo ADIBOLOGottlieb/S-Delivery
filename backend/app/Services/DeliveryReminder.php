@@ -6,6 +6,7 @@ use App\Enums\DeliveryStatus;
 use App\Enums\DeliveryType;
 use App\Models\Delivery;
 use App\Models\User;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -92,6 +93,21 @@ class DeliveryReminder
      * @return int nombre de rappels envoyés
      */
     public function sendDueReminders(): int
+    {
+        // Deux appels simultanés (GitHub + cron-job.org) n'envoient pas deux fois les mêmes rappels.
+        $lock = Cache::lock('delivery-reminders', 120);
+        if (! $lock->get()) {
+            return 0;
+        }
+
+        try {
+            return $this->sendDueRemindersUnlocked();
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function sendDueRemindersUnlocked(): int
     {
         $sent = 0;
 

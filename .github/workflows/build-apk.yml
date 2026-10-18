@@ -18,12 +18,12 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
@@ -54,24 +54,63 @@ jobs:
             echo "Pas de google-services.json : notifications push désactivées dans cet APK."
           fi
 
+      # Signature release (Play Store) : keystore encodé en base64 + mots de passe (secrets facultatifs).
+      # Sans ces secrets, android/app/build.gradle signe avec la clé debug : le build reste possible
+      # (APK installable à la main), mais l'AAB ne sera pas accepté par Google Play.
+      - name: Signature release (secrets ANDROID_KEYSTORE_*, optionnels)
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ] && [ -n "$ANDROID_KEYSTORE_PASSWORD" ] && [ -n "$ANDROID_KEY_ALIAS" ] && [ -n "$ANDROID_KEY_PASSWORD" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/upload-keystore.jks
+            {
+              echo "storeFile=upload-keystore.jks"
+              echo "storePassword=$ANDROID_KEYSTORE_PASSWORD"
+              echo "keyAlias=$ANDROID_KEY_ALIAS"
+              echo "keyPassword=$ANDROID_KEY_PASSWORD"
+            } > android/key.properties
+            echo "Signature release configurée."
+          else
+            echo "Secrets de signature absents : APK et AAB signés avec la clé debug."
+          fi
+
       - name: Build APK release
         run: flutter build apk --release --build-number=${{ github.run_number }}
 
-      - name: Renommer l'APK
-        run: cp build/app/outputs/flutter-apk/app-release.apk voom-delivery.apk
+      # Format exigé par Google Play.
+      - name: Build AAB release
+        run: flutter build appbundle --release --build-number=${{ github.run_number }}
 
-      - uses: actions/upload-artifact@v4
+      - name: Renommer les fichiers
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk voom-delivery.apk
+          cp build/app/outputs/bundle/release/app-release.aab voom-delivery.aab
+
+      - uses: actions/upload-artifact@v7
         with:
-          name: voom-delivery-apk
-          path: voom-delivery.apk
+          name: voom-delivery-android
+          path: |
+            voom-delivery.apk
+            voom-delivery.aab
 
       - name: Publier la release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: build-${{ github.run_number }}
           name: VOOM Delivery – build ${{ github.run_number }}
           body: |
-            APK Android de VOOM Delivery (commit ${{ github.sha }}).
+            Android de VOOM Delivery (commit ${{ github.sha }}).
+            - voom-delivery.apk : installation directe sur le téléphone.
+            - voom-delivery.aab : à envoyer sur la Google Play Console.
             API : https://voom-delivery-api.onrender.com/api/v1
-          files: voom-delivery.apk
+          files: |
+            voom-delivery.apk
+            voom-delivery.aab
           make_latest: true
+
+      - name: Nettoyage des secrets
+        if: always()
+        run: rm -f android/key.properties android/app/upload-keystore.jks android/app/google-services.json

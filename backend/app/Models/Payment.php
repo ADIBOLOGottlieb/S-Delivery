@@ -54,6 +54,22 @@ class Payment extends Model
         return $normalized === '' ? null : $normalized;
     }
 
+    /**
+     * Verrou sur une référence, à prendre dans la transaction avant referenceInUse() : deux preuves
+     * simultanées (sur deux livraisons différentes) ne peuvent pas réutiliser la même référence.
+     * PostgreSQL : verrou consultatif libéré au commit. SQLite (tests) sérialise déjà les écritures.
+     */
+    public static function lockReference(PaymentMethod|string $method, string $normalized): void
+    {
+        $connection = (new static)->getConnection();
+        if ($connection->getDriverName() !== 'pgsql') {
+            return;
+        }
+
+        $method = $method instanceof PaymentMethod ? $method->value : $method;
+        $connection->select('select pg_advisory_xact_lock(hashtext(?))', ["payment-ref:{$method}:{$normalized}"]);
+    }
+
     /** Référence déjà utilisée par un paiement non refusé (anciennes écritures comprises). */
     public static function referenceInUse(PaymentMethod|string $method, string $normalized): bool
     {

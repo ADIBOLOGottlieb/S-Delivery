@@ -1,0 +1,70 @@
+name: Tests backend (PostgreSQL)
+
+# Mêmes tests que `php artisan test` en local (SQLite), mais sur PostgreSQL comme en production :
+# détecte les requêtes qui ne passent que sous SQLite (casse, types, verrous).
+on:
+  push:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-tests.yml'
+  pull_request:
+    paths:
+      - 'backend/**'
+  workflow_dispatch:
+
+concurrency:
+  group: backend-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  phpunit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: voom
+          POSTGRES_PASSWORD: voom
+          POSTGRES_DB: voom_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U voom -d voom_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    # Les variables d'environnement priment sur celles de phpunit.xml (SQLite par défaut).
+    env:
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: '5432'
+      DB_DATABASE: voom_test
+      DB_USERNAME: voom
+      DB_PASSWORD: voom
+      DB_URL: ''
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_pgsql, pdo_sqlite, gd, exif, zip
+          coverage: none
+
+      - name: Dépendances Composer
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Configuration
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Tests (PostgreSQL)
+        run: php artisan test

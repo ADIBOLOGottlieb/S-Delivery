@@ -10,15 +10,18 @@ use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\RequestController;
 use Illuminate\Support\Facades\Route;
 
+// Identifiants de route numériques : « /deliveries/abc » répond 404 au lieu d'une erreur SQL.
+Route::patterns(['delivery' => '[0-9]+', 'deliveryRequest' => '[0-9]+']);
+
 Route::prefix('v1')->group(function () {
-    Route::middleware('throttle:10,1')->group(function () {
+    Route::middleware('throttle:auth')->group(function () {
         Route::post('/register', [AuthController::class, 'register']);
         Route::post('/login', [AuthController::class, 'login']);
     });
 
     // Mot de passe oublié : code envoyé par email, sans passer par l'agence.
-    Route::post('/password/forgot', [PasswordResetController::class, 'forgot'])->middleware('throttle:5,10');
-    Route::post('/password/reset', [PasswordResetController::class, 'reset'])->middleware('throttle:10,10');
+    Route::post('/password/forgot', [PasswordResetController::class, 'forgot'])->middleware('throttle:password-forgot');
+    Route::post('/password/reset', [PasswordResetController::class, 'reset'])->middleware('throttle:password-reset');
 
     // Tâches périodiques (rappels livreurs), protégées par X-Cron-Key.
     Route::post('/cron/run', CronController::class)->middleware('throttle:30,1');
@@ -26,6 +29,8 @@ Route::prefix('v1')->group(function () {
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('/me', [AuthController::class, 'me']);
         Route::post('/logout', [AuthController::class, 'logout']);
+        // Suppression du compte (exigence Google Play) : anonymisation, historique comptable conservé.
+        Route::delete('/me', [ProfileController::class, 'deleteAccount'])->middleware('throttle:5,1');
 
         Route::post('/me/device-token', [AuthController::class, 'deviceToken']);
         Route::post('/me/avatar', [ProfileController::class, 'updateAvatar'])->middleware('throttle:20,1');

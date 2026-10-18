@@ -175,9 +175,12 @@ class DeliveryFlowTest extends TestCase
     {
         Storage::fake('local');
         $this->seed();
-        $admin = User::where('role', 'admin')->firstOrFail();
+        // Hors environnement local, le seeder ne crée ni admin par défaut ni comptes démo.
+        $this->assertSame(0, User::where('role', '!=', 'admin')->count());
+        $admin = User::where('role', 'admin')->first() ?? User::factory()->admin()->create();
+        User::factory()->courier()->create();
 
-        Sanctum::actingAs(User::where('role', 'client')->firstOrFail());
+        Sanctum::actingAs(User::factory()->create());
         $id = $this->postJson('/api/v1/deliveries', $this->deliveryPayload())->json('data.id');
         $this->post("/api/v1/deliveries/{$id}/payment", [
             'method' => 'flooz', 'transaction_ref' => 'R1', 'payer_phone' => '+22899000000',

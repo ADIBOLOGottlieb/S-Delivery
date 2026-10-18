@@ -380,14 +380,14 @@ class DeliveryConsistencyTest extends TestCase
         $this->actingAs($admin)->get(route('admin.dashboard'))->assertOk()->assertViewHas('revenueMonth', 1000);
     }
 
-    public function test_client_import_is_limited_to_300_rows(): void
+    public function test_client_import_is_limited_to_100_rows(): void
     {
         $admin = User::factory()->admin()->create();
-        $csv = "nom;téléphone\n".implode("\n", array_map(fn ($i) => "Client $i;9".str_pad((string) $i, 7, '0', STR_PAD_LEFT), range(1, 301)));
+        $csv = "nom;téléphone\n".implode("\n", array_map(fn ($i) => "Client $i;9".str_pad((string) $i, 7, '0', STR_PAD_LEFT), range(1, 101)));
         $file = UploadedFile::fake()->createWithContent('clients.csv', $csv);
 
         $this->actingAs($admin)->post(route('admin.clients.import.store'), ['file' => $file])
-            ->assertSessionHasErrors(['file' => 'Le fichier contient 301 lignes : 300 clients maximum par import. Découpez-le en plusieurs fichiers et importez-les un par un.']);
+            ->assertSessionHasErrors(['file' => 'Le fichier contient 101 lignes : 100 clients maximum par import. Découpez-le en plusieurs fichiers et importez-les un par un.']);
         $this->assertSame(1, User::count());
     }
 

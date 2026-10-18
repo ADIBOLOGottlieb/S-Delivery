@@ -128,7 +128,7 @@ class ProductController extends Controller
         $data = $request->validate([
             'type' => ['required', Rule::in(['product', 'pack'])],
             'category' => ['required', Rule::in(array_keys(Product::CATEGORIES))],
-            'subcategory_id' => ['nullable', Rule::exists('subcategories', 'id')->where('category', $request->input('category'))],
+            'subcategory_id' => ['bail', 'nullable', 'integer', Rule::exists('subcategories', 'id')->where('category', $request->input('category'))],
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:2000'],
             'price' => ['required', 'integer', 'min:0'],
