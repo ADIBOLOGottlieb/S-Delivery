@@ -5,7 +5,6 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/delivery.dart';
-import '../../models/product.dart';
 import '../../services/api_client.dart';
 import '../../services/auth_service.dart';
 import '../../services/delivery_service.dart';
@@ -15,15 +14,16 @@ import '../../utils/formatters.dart';
 import '../../widgets/bottom_action_bar.dart';
 import '../../widgets/delivery_map.dart';
 import '../../widgets/photos.dart';
+import '../../widgets/ui.dart';
 import '../chat/chat_screen.dart';
 import '../chat/quick_request_screen.dart';
 import '../common/location_picker_screen.dart';
 
-/// Taille du colis (comme le module colis de Gozem) : remplace le choix du type de livraison.
+/// Taille du colis : remplace le choix du type de livraison.
 enum ParcelSize {
-  small('Petit', 'Enveloppe, documents', Icons.mail_outline_rounded),
-  medium('Moyen', 'Sac, boîte', Icons.shopping_bag_outlined),
-  large('Grand', 'Carton, gros colis', Icons.inventory_2_outlined);
+  small('Pli', 'Enveloppe, documents, clés', Icons.mail_outline_rounded),
+  medium('Colis', 'Sac, boîte, vêtements', Icons.shopping_bag_outlined),
+  large('Gros colis', 'Carton, plusieurs articles', Icons.inventory_2_outlined);
 
   const ParcelSize(this.label, this.hint, this.icon);
   final String label;
@@ -31,16 +31,24 @@ enum ParcelSize {
   final IconData icon;
 }
 
-/// Envoi d'un colis du point A (récupération) au point B (destination), façon Gozem :
-/// carte en haut, trajet « D'où → Où », J'envoie / Je reçois, taille, Maintenant / Programmer,
+/// Nouvelle livraison du point A (récupération) au point B (destination), façon apps de mobilité :
+/// carte en haut, trajet « Départ → Arrivée », J'envoie / Je reçois, taille, Maintenant / Programmer,
 /// prix et bouton « Commander » toujours visibles en bas.
-/// Avec [product], le point A est l'adresse du vendeur fixée par l'admin.
 class NewDeliveryScreen extends StatefulWidget {
   final DeliveryType initialType;
-  final Product? product;
-  final int quantity;
 
-  const NewDeliveryScreen({super.key, this.initialType = DeliveryType.colis, this.product, this.quantity = 1});
+  /// Le client reçoit le colis (il est au point B).
+  final bool receiving;
+
+  /// Destination déjà connue (adresse récente).
+  final DeliveryPoint? initialDropoff;
+
+  const NewDeliveryScreen({
+    super.key,
+    this.initialType = DeliveryType.colis,
+    this.receiving = false,
+    this.initialDropoff,
+  });
 
   @override
   State<NewDeliveryScreen> createState() => _NewDeliveryScreenState();
@@ -60,9 +68,9 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
   final _notes = TextEditingController();
 
   /// true : j'envoie (je suis au point A) ; false : je reçois (je suis au point B).
-  bool _sending = true;
+  late bool _sending = !widget.receiving;
   late ParcelSize _size = widget.initialType == DeliveryType.plis ? ParcelSize.small : ParcelSize.medium;
-  late bool _later = widget.product == null && widget.initialType == DeliveryType.programmee;
+  late bool _later = widget.initialType == DeliveryType.programmee;
   LatLng? _pickup;
   LatLng? _dropoff;
   DateTime? _scheduledAt;
@@ -80,21 +88,27 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
   final _photos = <String>[];
   static const _maxPhotos = 6;
 
-  bool get _isOrder => widget.product != null;
-
   /// Type envoyé au serveur : déduit de la taille et du moment choisis.
-  DeliveryType get _type => _later
-      ? DeliveryType.programmee
-      : (_size == ParcelSize.small && !_isOrder ? DeliveryType.plis : DeliveryType.colis);
+  DeliveryType get _type =>
+      _later ? DeliveryType.programmee : (_size == ParcelSize.small ? DeliveryType.plis : DeliveryType.colis);
 
   @override
   void initState() {
     super.initState();
+    final known = widget.initialDropoff;
+    if (known != null) {
+      _dropoff = known.latLng;
+      _dropoffAddress.text = known.address;
+      _recipientName.text = known.contactName ?? '';
+      _recipientPhone.text = known.contactPhone ?? '';
+    }
     _applyRole();
-    if (!_isOrder) _locateMe();
+    _locateMe();
+    // Programmée depuis l'accueil : le choix du jour et de l'heure s'ouvre tout de suite.
+    if (_later) WidgetsBinding.instance.addPostFrameCallback((_) => _pickSchedule());
   }
 
-  /// Comme Gozem : le point de l'utilisateur est rempli avec sa position, sans rien taper.
+  /// Le point de l'utilisateur est rempli avec sa position, sans rien taper.
   Future<void> _locateMe() async {
     try {
       if (!await Geolocator.isLocationServiceEnabled()) return;
@@ -120,7 +134,7 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
   /// Pose ma position de mon côté (si ce point est encore vide) et la retire de l'autre côté.
   void _placeMine() {
     final here = _here;
-    if (here == null || _isOrder) return;
+    if (here == null) return;
     if (_sending) {
       if (_dropoff == here.point) {
         _dropoff = null;
@@ -163,12 +177,6 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
   void _applyRole() {
     final user = context.read<AuthService>().user;
     if (user == null) return;
-    // Commande au marché : c'est moi qui reçois.
-    if (_isOrder) {
-      _recipientName.text = user.name;
-      _recipientPhone.text = user.phoneNumber;
-      return;
-    }
     final mine = _sending ? (_pickupName, _pickupPhone) : (_recipientName, _recipientPhone);
     final theirs = _sending ? (_recipientName, _recipientPhone) : (_pickupName, _pickupPhone);
     mine.$1.text = user.name;
@@ -177,6 +185,16 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
       theirs.$1.clear();
       theirs.$2.clear();
     }
+  }
+
+  void _switchRole(bool sending) {
+    if (sending == _sending) return;
+    setState(() {
+      _sending = sending;
+      _applyRole();
+      _placeMine();
+    });
+    _refreshQuote();
   }
 
   Future<void> _pick({required bool pickup}) async {
@@ -255,8 +273,7 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
   }
 
   Future<void> _refreshQuote() async {
-    // Pour une commande, le devis exact est calculé par le serveur à la création (adresse vendeur).
-    if (_isOrder || _pickup == null || _dropoff == null) return;
+    if (_pickup == null || _dropoff == null) return;
     // Seule la dernière demande de prix compte (changements rapides de taille ou de moment).
     final seq = ++_quoteSeq;
     setState(() {
@@ -312,6 +329,7 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
       _later = true;
       _scheduledAt = chosen;
     });
+    _refreshQuote();
   }
 
   /// Saisies faites par le client (hors position et coordonnées remplies d'office), perdues en quittant le formulaire.
@@ -333,18 +351,17 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
         typed(_notes);
   }
 
-  /// Programmation par photo : ouverte à tout client connecté, au même titre que le formulaire.
-  /// Les photos déjà jointes au formulaire sont reprises ; les autres saisies sont perdues (confirmation).
+  /// Programmation par photo : les photos déjà jointes sont reprises, les autres saisies sont perdues (confirmation).
   Future<void> _openPhotoProgramming() async {
     if (_hasTypedData) {
       final ok = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('Passer à la programmation par photo ?'),
+          title: const Text('Passer à la commande par photo ?'),
           content: const Text('Vos informations saisies seront perdues, seules les photos sont gardées.'),
           actions: [
             TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Rester ici')),
-            ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Continuer')),
+            TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Continuer')),
           ],
         ),
       );
@@ -388,7 +405,7 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
   Future<void> _missingAddress(String what) async {
     if (_photos.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Indiquez $what. Vous ne la connaissez pas ? Utilisez « Programmation par photo ».'),
+        content: Text('Indiquez $what. Vous ne la connaissez pas ? Utilisez « Commander par photo ».'),
         backgroundColor: AppColors.error,
       ));
       return;
@@ -396,7 +413,7 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
     final send = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        icon: const Icon(Icons.add_a_photo, color: AppColors.primaryDark, size: 36),
+        icon: const Icon(Icons.add_a_photo_outlined, size: 32),
         title: const Text('Adresse manquante'),
         content: Text(
           'Pour un prix immédiat, indiquez $what.\n\n'
@@ -404,7 +421,7 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Compléter l'adresse")),
-          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text("Envoyer à l'agence")),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("Envoyer à l'agence")),
         ],
       ),
     );
@@ -421,12 +438,12 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.photo_camera),
+              leading: const Icon(Icons.photo_camera_outlined),
               title: const Text('Prendre une photo'),
               onTap: () => Navigator.pop(context, true),
             ),
             ListTile(
-              leading: const Icon(Icons.photo_library),
+              leading: const Icon(Icons.photo_library_outlined),
               title: Text('Choisir dans la galerie (jusqu\'à $remaining)'),
               onTap: () => Navigator.pop(context, false),
             ),
@@ -451,7 +468,7 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
     final messenger = ScaffoldMessenger.of(context);
     void error(String msg) => messenger.showSnackBar(SnackBar(content: Text(msg), backgroundColor: AppColors.error));
 
-    if (!_isOrder && _pickup == null) return _missingAddress('où récupérer le colis');
+    if (_pickup == null) return _missingAddress('où récupérer le colis');
     if (_dropoff == null) return _missingAddress('où livrer le colis');
     if (!_formKey.currentState!.validate()) return;
     if (_later && _scheduledAt == null) return error("Choisissez le jour et l'heure de passage.");
@@ -469,28 +486,23 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
     String? orNull(TextEditingController c) => c.text.trim().isEmpty ? null : c.text.trim();
     final details = orNull(_description);
     final description = [
-      if (!_isOrder) 'Taille : ${_size.label} (${_size.hint.toLowerCase()})',
+      'Taille : ${_size.label} (${_size.hint.toLowerCase()})',
       if (details != null) details,
     ].join(' · ');
 
     final payload = <String, dynamic>{
       'type': _type.value,
-      if (_isOrder) ...{
-        'product_id': widget.product!.id,
-        'quantity': widget.quantity,
-      } else ...{
-        'pickup_address': _pickupAddress.text.trim(),
-        'pickup_lat': _pickup!.latitude,
-        'pickup_lng': _pickup!.longitude,
-        'pickup_contact_name': orNull(_pickupName),
-        'pickup_contact_phone': orNull(_pickupPhone),
-      },
+      'pickup_address': _pickupAddress.text.trim(),
+      'pickup_lat': _pickup!.latitude,
+      'pickup_lng': _pickup!.longitude,
+      'pickup_contact_name': orNull(_pickupName),
+      'pickup_contact_phone': orNull(_pickupPhone),
       'dropoff_address': _dropoffAddress.text.trim(),
       'dropoff_lat': _dropoff!.latitude,
       'dropoff_lng': _dropoff!.longitude,
       'recipient_name': _recipientName.text.trim(),
       'recipient_phone': _recipientPhone.text.trim(),
-      'package_description': description.isEmpty ? null : description,
+      'package_description': description,
       'notes': orNull(_notes),
       if (_later && _scheduledAt != null) 'scheduled_at': _scheduledAt!.toUtc().toIso8601String(),
       if (_deadline != null) 'deadline_at': _deadline!.toUtc().toIso8601String(),
@@ -506,7 +518,7 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
       if (mounted) setState(() => _submitting = false);
       return;
     } catch (_) {
-      error('Une erreur est survenue. Vérifiez dans Suivi avant de recommencer.');
+      error('Une erreur est survenue. Vérifiez dans Activité avant de recommencer.');
       if (mounted) setState(() => _submitting = false);
       return;
     }
@@ -523,8 +535,8 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
     if (!mounted) return;
     messenger.showSnackBar(SnackBar(
       content: Text(failed == 0
-          ? 'Demande créée. Effectuez le paiement pour la confirmer.'
-          : 'Demande créée. $failed photo(s) non envoyée(s), ajoutez-les depuis le suivi.'),
+          ? 'Course créée. Payez pour la confirmer.'
+          : 'Course créée. $failed photo(s) non envoyée(s), ajoutez-les depuis le suivi.'),
       backgroundColor: failed == 0 ? AppColors.success : AppColors.warning,
     ));
     Navigator.of(context).pop(delivery);
@@ -532,210 +544,182 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final product = widget.product;
     final textTheme = Theme.of(context).textTheme;
-    final otherSide = _sending || _isOrder;
+    final otherSide = _sending;
+    final top = MediaQuery.paddingOf(context).top;
 
     // Pas de retour pendant l'envoi (demande et photos) : la commande partirait sans suite.
     return PopScope(
       canPop: !_submitting,
       child: Scaffold(
-        appBar: AppBar(title: Text(_isOrder ? 'Commander' : 'Envoyer un colis')),
         body: Form(
           key: _formKey,
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            padding: EdgeInsets.zero,
             children: [
-              _RouteMap(pickup: _pickup, dropoff: _dropoff, fallback: _lome),
-              // Carte du trajet qui chevauche la carte, comme une feuille Gozem.
-              Transform.translate(
-                offset: const Offset(0, -28),
-                child: _Panel(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (product != null) ...[
-                        _OrderSummary(product: product, quantity: widget.quantity),
-                        const SizedBox(height: 14),
-                      ] else ...[
-                        _RoleSwitch(
-                          sending: _sending,
-                          onChanged: (v) {
-                            setState(() {
-                              _sending = v;
-                              _applyRole();
-                              _placeMine();
-                            });
-                            _refreshQuote();
-                          },
-                        ),
-                        const SizedBox(height: 14),
-                      ],
-                      _RouteStop(
-                        color: AppColors.success,
-                        square: false,
-                        label: 'Récupération',
-                        value: product != null
-                            ? (product.vendorName ?? product.pickupAddress)
-                            : (_pickup == null ? null : _pickupAddress.text),
-                        placeholder: 'Où récupérer le colis ?',
-                        onTap: product != null ? null : () => _pick(pickup: true),
-                        onEdit: product != null || _pickup == null ? null : () => _editLandmark(pickup: true),
-                      ),
-                      const _RouteConnector(),
-                      _RouteStop(
-                        color: AppColors.error,
-                        square: true,
-                        label: 'Destination',
-                        value: _dropoff == null ? null : _dropoffAddress.text,
-                        placeholder: 'Où livrer le colis ?',
-                        onTap: () => _pick(pickup: false),
-                        onEdit: _dropoff == null ? null : () => _editLandmark(pickup: false),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              // Personne à l'autre bout (l'utilisateur est pré-rempli de son côté).
-              _SectionLabel(otherSide ? 'Qui reçoit le colis ?' : 'Qui remet le colis ?'),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              Stack(
                 children: [
-                  Expanded(
-                    child: TextFormField(
-                      key: ValueKey('name-$otherSide'),
-                      controller: otherSide ? _recipientName : _pickupName,
-                      textCapitalization: TextCapitalization.words,
-                      decoration: const InputDecoration(labelText: 'Nom', prefixIcon: Icon(Icons.person_outline)),
-                      validator: _required('Nom requis'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextFormField(
-                      key: ValueKey('phone-$otherSide'),
-                      controller: otherSide ? _recipientPhone : _pickupPhone,
-                      keyboardType: TextInputType.phone,
-                      decoration: const InputDecoration(labelText: 'Numéro', prefixIcon: Icon(Icons.phone_outlined)),
-                      validator: (v) => (v ?? '').replaceAll(RegExp(r'\D'), '').length < 8 ? 'Numéro invalide' : null,
+                  _RouteMap(pickup: _pickup, dropoff: _dropoff, fallback: _lome, height: 250 + top),
+                  Positioned(
+                    left: 12,
+                    top: top + 8,
+                    child: IconButton.filled(
+                      tooltip: 'Retour',
+                      style: IconButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: AppColors.ink,
+                        elevation: 2,
+                        shadowColor: Colors.black26,
+                      ),
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      icon: const Icon(Icons.arrow_back_rounded),
                     ),
                   ),
                 ],
               ),
-              if (!_isOrder) ...[
-                const _SectionLabel('Taille du colis'),
-                Row(
-                  children: [
-                    for (final s in ParcelSize.values) ...[
-                      if (s != ParcelSize.values.first) const SizedBox(width: 10),
-                      Expanded(
-                        child: _ChoiceTile(
+              // Feuille blanche qui chevauche la carte.
+              Transform.translate(
+                offset: const Offset(0, -24),
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                  ),
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(_sending ? 'Envoyer un colis' : 'Recevoir un colis', style: textTheme.headlineSmall),
+                      const SizedBox(height: 14),
+                      _RoleSwitch(sending: _sending, onChanged: _switchRole),
+                      const SizedBox(height: 16),
+                      _RouteCard(
+                        pickup: _pickup == null ? null : _pickupAddress.text,
+                        dropoff: _dropoff == null ? null : _dropoffAddress.text,
+                        onPickup: () => _pick(pickup: true),
+                        onDropoff: () => _pick(pickup: false),
+                        onEditPickup: _pickup == null ? null : () => _editLandmark(pickup: true),
+                        onEditDropoff: _dropoff == null ? null : () => _editLandmark(pickup: false),
+                      ),
+                      const SectionTitle('Choisissez une option'),
+                      for (final s in ParcelSize.values)
+                        _OptionRow(
                           icon: s.icon,
                           title: s.label,
                           subtitle: s.hint,
+                          price: _quote == null ? null : formatFcfa(_quote!.deliveryFee),
                           selected: _size == s,
                           onTap: () {
                             setState(() => _size = s);
                             _refreshQuote();
                           },
                         ),
+                      const SectionTitle('Quand ?'),
+                      Row(
+                        children: [
+                          _WhenChip(
+                            icon: Icons.bolt_rounded,
+                            label: 'Maintenant',
+                            selected: !_later,
+                            onTap: () {
+                              setState(() => _later = false);
+                              _refreshQuote();
+                            },
+                          ),
+                          const SizedBox(width: 10),
+                          _WhenChip(
+                            icon: Icons.event_rounded,
+                            label: _later && _scheduledAt != null ? formatDateTime(_scheduledAt!) : 'Programmer',
+                            selected: _later,
+                            onTap: _pickSchedule,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      // Commande par simple photo du colis (l'agence complète le reste).
+                      ListRow(
+                        icon: Icons.photo_camera_outlined,
+                        title: 'Commander par photo',
+                        subtitle: "Une photo du colis suffit, l'agence s'occupe du reste",
+                        onTap: _openPhotoProgramming,
+                      ),
+                      // Personne à l'autre bout (l'utilisateur est pré-rempli de son côté).
+                      SectionTitle(otherSide ? 'Qui reçoit le colis ?' : 'Qui remet le colis ?'),
+                      TextFormField(
+                        key: ValueKey('name-$otherSide'),
+                        controller: otherSide ? _recipientName : _pickupName,
+                        textCapitalization: TextCapitalization.words,
+                        decoration: const InputDecoration(labelText: 'Nom', prefixIcon: Icon(Icons.person_outline_rounded)),
+                        validator: _required('Nom requis'),
+                      ),
+                      const SizedBox(height: 10),
+                      TextFormField(
+                        key: ValueKey('phone-$otherSide'),
+                        controller: otherSide ? _recipientPhone : _pickupPhone,
+                        keyboardType: TextInputType.phone,
+                        decoration: const InputDecoration(labelText: 'Numéro de téléphone', prefixIcon: Icon(Icons.phone_outlined)),
+                        validator: (v) => (v ?? '').replaceAll(RegExp(r'\D'), '').length < 8 ? 'Numéro invalide' : null,
+                      ),
+                      const SectionTitle('Détails'),
+                      TextFormField(
+                        controller: _description,
+                        maxLines: 2,
+                        minLines: 1,
+                        decoration: const InputDecoration(
+                          labelText: 'Que contient le colis ? (facultatif)',
+                          prefixIcon: Icon(Icons.inventory_2_outlined),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextFormField(
+                        controller: _notes,
+                        maxLines: 2,
+                        minLines: 1,
+                        decoration: const InputDecoration(
+                          labelText: 'Instructions pour le livreur (facultatif)',
+                          prefixIcon: Icon(Icons.notes_rounded),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      ListRow(
+                        icon: Icons.alarm_rounded,
+                        title: _deadline == null ? 'Heure limite de livraison' : 'À livrer avant ${formatDateTime(_deadline!)}',
+                        subtitle: _deadline == null ? 'Facultatif · le livreur est alerté si elle approche' : 'Touchez pour modifier',
+                        onTap: _pickDeadline,
+                        trailing: _deadline == null
+                            ? null
+                            : IconButton(
+                                tooltip: 'Retirer',
+                                icon: const Icon(Icons.close_rounded),
+                                onPressed: () => setState(() => _deadline = null),
+                              ),
+                      ),
+                      SectionTitle(
+                        'Photos des articles',
+                        trailing: Text('${_photos.length}/$_maxPhotos · facultatif', style: textTheme.bodySmall),
+                      ),
+                      LocalPhotoGrid(
+                        paths: _photos,
+                        max: _maxPhotos,
+                        onAdd: _addPhotos,
+                        onRemove: (i) => setState(() => _photos.removeAt(i)),
                       ),
                     ],
-                  ],
-                ),
-                const _SectionLabel('Quand ?'),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _ChoiceTile(
-                        icon: Icons.bolt_rounded,
-                        title: 'Maintenant',
-                        subtitle: 'Dès que possible',
-                        selected: !_later,
-                        onTap: () {
-                          setState(() => _later = false);
-                          _refreshQuote();
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _ChoiceTile(
-                        icon: Icons.event_rounded,
-                        title: 'Programmer',
-                        subtitle: _later && _scheduledAt != null ? formatDateTime(_scheduledAt!) : 'Jour et heure',
-                        selected: _later,
-                        onTap: () async {
-                          await _pickSchedule();
-                          _refreshQuote();
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-                // Sous les programmations : commande par simple photo du colis (l'agence complète le reste).
-                const SizedBox(height: 12),
-                _PhotoProgrammingTile(onTap: _openPhotoProgramming),
-              ],
-              const _SectionLabel('Options'),
-              _OptionTile(
-                icon: Icons.alarm,
-                title: _deadline == null ? 'Heure limite de livraison' : 'À livrer avant ${formatDateTime(_deadline!)}',
-                subtitle:
-                    _deadline == null ? 'Facultatif · le livreur est alerté si elle approche' : 'Touchez pour modifier',
-                highlighted: _deadline != null,
-                onTap: _pickDeadline,
-                onClear: _deadline == null ? null : () => setState(() => _deadline = null),
-              ),
-              const SizedBox(height: 12),
-              if (!_isOrder) ...[
-                TextFormField(
-                  controller: _description,
-                  maxLines: 2,
-                  decoration: const InputDecoration(
-                    labelText: 'Que contient le colis ? (facultatif)',
-                    prefixIcon: Icon(Icons.inventory_2_outlined),
                   ),
                 ),
-                const SizedBox(height: 12),
-              ],
-              TextFormField(
-                controller: _notes,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                  labelText: 'Instructions pour le livreur (facultatif)',
-                  prefixIcon: Icon(Icons.notes),
-                ),
-              ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  const Icon(Icons.photo_library_outlined, size: 20),
-                  const SizedBox(width: 8),
-                  Text('Photos des articles', style: textTheme.titleMedium),
-                  const Spacer(),
-                  Text('${_photos.length}/$_maxPhotos · facultatif', style: textTheme.bodySmall),
-                ],
-              ),
-              const SizedBox(height: 10),
-              LocalPhotoGrid(
-                paths: _photos,
-                max: _maxPhotos,
-                onAdd: _addPhotos,
-                onRemove: (i) => setState(() => _photos.removeAt(i)),
               ),
             ],
           ),
         ),
         // Prix et bouton toujours visibles, au-dessus de la barre de navigation du téléphone.
         bottomNavigationBar: BottomActionBar(
-          summary: _isOrder
-              ? Text('Frais de livraison calculés selon la distance et ajoutés au total.', style: textTheme.bodySmall)
-              : _QuoteSummary(quote: _quote, loading: _quoting, failed: _quoteFailed, onRetry: _refreshQuote),
+          summary: _QuoteSummary(quote: _quote, loading: _quoting, failed: _quoteFailed, onRetry: _refreshQuote),
           children: [
             ElevatedButton(
               onPressed: _submitting ? null : _submit,
-              child: _submitting ? const ButtonProgress() : Text(_isOrder ? 'Valider la commande' : 'Commander · payer ensuite'),
+              child: _submitting
+                  ? const ButtonProgress()
+                  : Text(_quote == null ? 'Commander' : 'Commander · ${formatFcfa(_quote!.deliveryFee)}'),
             ),
           ],
         ),
@@ -752,72 +736,40 @@ class _RouteMap extends StatelessWidget {
   final LatLng? pickup;
   final LatLng? dropoff;
   final LatLng fallback;
+  final double height;
 
-  const _RouteMap({required this.pickup, required this.dropoff, required this.fallback});
+  const _RouteMap({required this.pickup, required this.dropoff, required this.fallback, required this.height});
 
   @override
   Widget build(BuildContext context) {
     final points = <LatLng>[if (pickup != null) pickup!, if (dropoff != null) dropoff!];
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: SizedBox(
-        height: 210,
-        child: FlutterMap(
-          key: ValueKey(points.map((p) => '${p.latitude},${p.longitude}').join('|')),
-          options: MapOptions(
-            initialCenter: points.isEmpty ? fallback : points.first,
-            initialZoom: points.isEmpty ? 12.5 : 15,
-            initialCameraFit: points.length == 2
-                ? CameraFit.coordinates(coordinates: points, padding: const EdgeInsets.fromLTRB(40, 30, 40, 60))
-                : null,
-            interactionOptions: const InteractionOptions(flags: InteractiveFlag.none),
-          ),
-          children: [
-            osmTiles(),
-            if (points.length == 2)
-              PolylineLayer(polylines: [
-                Polyline(
-                  points: points,
-                  strokeWidth: 4,
-                  color: AppColors.secondary.withValues(alpha: 0.75),
-                  pattern: StrokePattern.dashed(segments: const [12, 8]),
-                ),
-              ]),
-            MarkerLayer(markers: [
-              if (pickup != null) pointMarker(pickup!, 'A', AppColors.success),
-              if (dropoff != null) pointMarker(dropoff!, 'B', AppColors.error),
-            ]),
-            osmAttribution(),
-          ],
+    return SizedBox(
+      height: height,
+      child: FlutterMap(
+        key: ValueKey(points.map((p) => '${p.latitude},${p.longitude}').join('|')),
+        options: MapOptions(
+          initialCenter: points.isEmpty ? fallback : points.first,
+          initialZoom: points.isEmpty ? 12.5 : 15,
+          initialCameraFit: points.length == 2
+              ? CameraFit.coordinates(coordinates: points, padding: const EdgeInsets.fromLTRB(60, 90, 60, 70))
+              : null,
+          interactionOptions: const InteractionOptions(flags: InteractiveFlag.none),
         ),
-      ),
-    );
-  }
-}
-
-/// Panneau ivoire arrondi avec ombre douce.
-class _Panel extends StatelessWidget {
-  final Widget child;
-
-  const _Panel({required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(color: AppColors.primaryDark.withValues(alpha: 0.22), blurRadius: 20, offset: const Offset(0, 8)),
+        children: [
+          osmTiles(),
+          if (points.length == 2) routeLine(points),
+          MarkerLayer(markers: [
+            if (pickup != null) stopMarker(pickup!, pickup: true),
+            if (dropoff != null) stopMarker(dropoff!, pickup: false),
+          ]),
+          osmAttribution(),
         ],
       ),
-      child: child,
     );
   }
 }
 
-/// Bascule « J'envoie / Je reçois ».
+/// Bascule « J'envoie / Je reçois » : rail gris, segment actif blanc avec ombre.
 class _RoleSwitch extends StatelessWidget {
   final bool sending;
   final ValueChanged<bool> onChanged;
@@ -836,19 +788,23 @@ class _RoleSwitch extends StatelessWidget {
             onTap: () => onChanged(value),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(vertical: 10),
+              padding: const EdgeInsets.symmetric(vertical: 11),
               decoration: BoxDecoration(
-                color: active ? AppColors.primary : Colors.transparent,
-                borderRadius: BorderRadius.circular(20),
+                color: active ? Colors.white : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: active ? const [BoxShadow(color: Color(0x1F000000), blurRadius: 6, offset: Offset(0, 2))] : null,
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(icon, size: 18, color: active ? AppColors.onPrimary : Colors.white70),
+                  Icon(icon, size: 18, color: active ? AppColors.ink : AppColors.textSecondary),
                   const SizedBox(width: 6),
                   Text(
                     label,
-                    style: TextStyle(fontWeight: FontWeight.w700, color: active ? AppColors.onPrimary : Colors.white70),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: active ? AppColors.ink : AppColors.textSecondary,
+                    ),
                   ),
                 ],
               ),
@@ -859,8 +815,8 @@ class _RoleSwitch extends StatelessWidget {
     }
 
     return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(color: AppColors.secondary, borderRadius: BorderRadius.circular(22)),
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(14)),
       child: Row(
         children: [
           option(true, Icons.north_east_rounded, "J'envoie"),
@@ -871,150 +827,102 @@ class _RoleSwitch extends StatelessWidget {
   }
 }
 
-/// Étape du trajet : pastille (ronde = départ, carrée = arrivée), libellé et adresse.
-class _RouteStop extends StatelessWidget {
-  final Color color;
-  final bool square;
-  final String label;
-  final String? value;
-  final String placeholder;
-  final VoidCallback? onTap;
-  final VoidCallback? onEdit;
+/// Trajet : départ (rond) et arrivée (carré) reliés, chaque ligne ouvre le choix sur la carte.
+class _RouteCard extends StatelessWidget {
+  final String? pickup;
+  final String? dropoff;
+  final VoidCallback onPickup;
+  final VoidCallback onDropoff;
+  final VoidCallback? onEditPickup;
+  final VoidCallback? onEditDropoff;
 
-  const _RouteStop({
-    required this.color,
-    required this.square,
-    required this.label,
-    required this.value,
-    required this.placeholder,
-    required this.onTap,
-    required this.onEdit,
+  const _RouteCard({
+    required this.pickup,
+    required this.dropoff,
+    required this.onPickup,
+    required this.onDropoff,
+    required this.onEditPickup,
+    required this.onEditDropoff,
   });
 
   @override
   Widget build(BuildContext context) {
-    final empty = value == null || value!.isEmpty;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
-          children: [
-            Container(
-              width: 16,
-              height: 16,
-              decoration: BoxDecoration(
-                color: color,
-                shape: square ? BoxShape.rectangle : BoxShape.circle,
-                borderRadius: square ? BorderRadius.circular(4) : null,
-                border: Border.all(color: AppColors.card, width: 3),
-                boxShadow: [BoxShadow(color: color.withValues(alpha: 0.5), blurRadius: 4)],
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label, style: Theme.of(context).textTheme.bodySmall),
-                  Text(
-                    empty ? placeholder : value!,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 15.5,
-                      fontWeight: empty ? FontWeight.w500 : FontWeight.w700,
-                      color: empty ? AppColors.textHint : AppColors.textPrimary,
+    Widget row({
+      required bool isPickup,
+      required String? value,
+      required String placeholder,
+      required VoidCallback onTap,
+      VoidCallback? onEdit,
+    }) {
+      final empty = value == null || value.isEmpty;
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+          child: Row(
+            children: [
+              StopDot(pickup: isPickup),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(isPickup ? 'Départ' : 'Arrivée', style: Theme.of(context).textTheme.bodySmall),
+                    Text(
+                      empty ? placeholder : value,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 15.5,
+                        fontWeight: empty ? FontWeight.w500 : FontWeight.w700,
+                        color: empty ? AppColors.textHint : AppColors.ink,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            if (onEdit != null)
-              IconButton(
-                  tooltip: 'Préciser le repère', onPressed: onEdit, icon: const Icon(Icons.edit_outlined, size: 20))
-            else if (onTap != null)
-              const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary),
-          ],
+              if (onEdit != null)
+                IconButton(tooltip: 'Préciser le repère', onPressed: onEdit, icon: const Icon(Icons.edit_outlined, size: 20))
+              else
+                const Icon(Icons.chevron_right_rounded, color: AppColors.textHint),
+            ],
+          ),
         ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
       ),
-    );
-  }
-}
-
-/// Pointillés verticaux entre départ et arrivée.
-class _RouteConnector extends StatelessWidget {
-  const _RouteConnector();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 7),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (var i = 0; i < 3; i++)
-            Container(
-                width: 2, height: 4, margin: const EdgeInsets.symmetric(vertical: 1.5), color: AppColors.textHint),
+          row(isPickup: true, value: pickup, placeholder: 'Où récupérer le colis ?', onTap: onPickup, onEdit: onEditPickup),
+          const Padding(padding: EdgeInsets.only(left: 30), child: Divider()),
+          row(isPickup: false, value: dropoff, placeholder: 'Où livrer le colis ?', onTap: onDropoff, onEdit: onEditDropoff),
         ],
       ),
     );
   }
 }
 
-/// Produit commandé (mode marketplace).
-class _OrderSummary extends StatelessWidget {
-  final Product product;
-  final int quantity;
-
-  const _OrderSummary({required this.product, required this.quantity});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        const CircleAvatar(
-          backgroundColor: AppColors.primary,
-          child: Icon(Icons.shopping_basket, color: AppColors.onPrimary),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text('$quantity × ${product.name}',
-              style: const TextStyle(fontWeight: FontWeight.w700), maxLines: 2, overflow: TextOverflow.ellipsis),
-        ),
-        Text(formatFcfa(product.price * quantity), style: const TextStyle(fontWeight: FontWeight.w800)),
-      ],
-    );
-  }
-}
-
-class _SectionLabel extends StatelessWidget {
-  final String text;
-
-  const _SectionLabel(this.text);
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 18, bottom: 10),
-      child: Text(text, style: Theme.of(context).textTheme.titleMedium),
-    );
-  }
-}
-
-/// Choix en carte (taille, moment) : jaune et contour noir quand sélectionné.
-class _ChoiceTile extends StatelessWidget {
+/// Option de taille, présentée comme les gammes de véhicules d'une app de mobilité (prix à droite).
+class _OptionRow extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
+  final String? price;
   final bool selected;
   final VoidCallback onTap;
 
-  const _ChoiceTile({
+  const _OptionRow({
     required this.icon,
     required this.title,
     required this.subtitle,
+    required this.price,
     required this.selected,
     required this.onTap,
   });
@@ -1024,30 +932,36 @@ class _ChoiceTile extends StatelessWidget {
     return Semantics(
       selected: selected,
       button: true,
-      child: Material(
-        color: selected ? AppColors.primary : AppColors.card,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-          side: BorderSide(color: selected ? AppColors.secondary : AppColors.border, width: selected ? 2 : 1),
-        ),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(18),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-            child: Column(
-              children: [
-                Icon(icon, size: 26, color: AppColors.secondary),
-                const SizedBox(height: 6),
-                Text(title, style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  style: TextStyle(fontSize: 11.5, color: selected ? AppColors.onPrimary : AppColors.textSecondary),
-                ),
-              ],
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Material(
+          color: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(color: selected ? AppColors.ink : AppColors.border, width: selected ? 2 : 1),
+          ),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(14),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  IconSquare(icon, size: 48, background: selected ? AppColors.accent : AppColors.surface),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.ink)),
+                        Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+                      ],
+                    ),
+                  ),
+                  if (price != null)
+                    Text(price!, style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700, color: AppColors.ink)),
+                ],
+              ),
             ),
           ),
         ),
@@ -1056,82 +970,39 @@ class _ChoiceTile extends StatelessWidget {
   }
 }
 
-/// Option facultative en ligne (heure limite…).
-class _OptionTile extends StatelessWidget {
+/// Puce « Maintenant » / « Programmer ».
+class _WhenChip extends StatelessWidget {
   final IconData icon;
-  final String title;
-  final String subtitle;
-  final bool highlighted;
+  final String label;
+  final bool selected;
   final VoidCallback onTap;
-  final VoidCallback? onClear;
 
-  const _OptionTile({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.highlighted,
-    required this.onTap,
-    this.onClear,
-  });
+  const _WhenChip({required this.icon, required this.label, required this.selected, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: highlighted ? AppColors.primarySoft : AppColors.card,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: AppColors.border),
-      ),
-      child: ListTile(
-        onTap: onTap,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        leading: Icon(icon, color: AppColors.secondary),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-        subtitle: Text(subtitle),
-        trailing: onClear == null
-            ? const Icon(Icons.chevron_right)
-            : IconButton(tooltip: 'Retirer', icon: const Icon(Icons.close), onPressed: onClear),
-      ),
-    );
-  }
-}
-
-/// Tuile pleine largeur « Programmation par photo », sous les programmations.
-class _PhotoProgrammingTile extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _PhotoProgrammingTile({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.secondary,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(
-            children: [
-              CircleAvatar(
-                radius: 20,
-                backgroundColor: AppColors.primary,
-                child: Icon(Icons.add_a_photo, color: AppColors.onPrimary, size: 20),
-              ),
-              SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Programmation par photo',
-                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
-                    Text('Une simple photo du colis suffit', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                  ],
+    return Semantics(
+      selected: selected,
+      button: true,
+      child: Material(
+        color: selected ? AppColors.ink : AppColors.surface,
+        shape: const StadiumBorder(),
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const StadiumBorder(),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 18, color: selected ? Colors.white : AppColors.ink),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(fontWeight: FontWeight.w600, color: selected ? Colors.white : AppColors.ink),
                 ),
-              ),
-              Icon(Icons.chevron_right, color: AppColors.primary),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1150,8 +1021,9 @@ class _QuoteSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final body = Theme.of(context).textTheme.bodyMedium;
     return SizedBox(
-      height: 30,
+      height: 28,
       child: Row(
         children: [
           if (loading)
@@ -1166,7 +1038,7 @@ class _QuoteSummary extends StatelessWidget {
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text('Prix indisponible · toucher pour réessayer',
-                          maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodyMedium),
+                          maxLines: 1, overflow: TextOverflow.ellipsis, style: body),
                     ),
                   ],
                 ),
@@ -1174,14 +1046,12 @@ class _QuoteSummary extends StatelessWidget {
             )
           else if (quote == null)
             Expanded(
-              child: Text('Indiquez départ et destination pour le prix.',
-                  maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodyMedium),
+              child: Text('Indiquez départ et arrivée pour le prix.', maxLines: 1, overflow: TextOverflow.ellipsis, style: body),
             )
           else ...[
             const Icon(Icons.route_rounded, size: 20, color: AppColors.textSecondary),
             const SizedBox(width: 6),
-            Expanded(child: Text(formatKm(quote!.distanceKm), style: Theme.of(context).textTheme.bodyMedium)),
-            Text(formatFcfa(quote!.deliveryFee), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+            Expanded(child: Text('${formatKm(quote!.distanceKm)} · paiement après la commande', style: body)),
           ],
         ],
       ),

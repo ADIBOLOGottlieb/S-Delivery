@@ -22,6 +22,12 @@ Future<void> callPhone(BuildContext context, String phone) {
   return _launch(context, uri, 'Impossible de lancer l\'appel.');
 }
 
+/// Prépare un SMS vers [phone] (ex. code de remise transmis au destinataire).
+Future<void> sendSms(BuildContext context, String phone, String body) {
+  final uri = Uri(scheme: 'sms', path: phone.replaceAll(' ', ''), queryParameters: {'body': body});
+  return _launch(context, uri, "Impossible d'ouvrir les messages.");
+}
+
 /// Ouvre WhatsApp vers [phone] avec un message prérempli.
 Future<void> openWhatsApp(BuildContext context, String phone, {String? message}) {
   final digits = phone.replaceAll(RegExp(r'[^0-9]'), '');

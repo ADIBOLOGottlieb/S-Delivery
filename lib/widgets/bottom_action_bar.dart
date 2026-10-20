@@ -15,13 +15,10 @@ class BottomActionBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
-      // Panneau ivoire arrondi qui se détache du fond crème.
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        boxShadow: [
-          BoxShadow(color: AppColors.primaryDark.withValues(alpha: 0.18), blurRadius: 18, offset: const Offset(0, -4)),
-        ],
+      // Feuille blanche séparée du contenu par une ombre légère, comme les barres de commande des apps de mobilité.
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        boxShadow: [BoxShadow(color: Color(0x14000000), blurRadius: 16, offset: Offset(0, -2))],
       ),
       child: SafeArea(
         top: false,
@@ -32,7 +29,7 @@ class BottomActionBar extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (summary != null) ...[summary!, const SizedBox(height: 10)],
+              if (summary != null) ...[summary!, const SizedBox(height: 12)],
               for (var i = 0; i < children.length; i++) ...[
                 if (i > 0) const SizedBox(height: 8),
                 children[i],
@@ -47,14 +44,16 @@ class BottomActionBar extends StatelessWidget {
 
 /// Indicateur de chargement aux dimensions d'un libellé de bouton.
 class ButtonProgress extends StatelessWidget {
-  const ButtonProgress({super.key});
+  final Color color;
+
+  const ButtonProgress({super.key, this.color = AppColors.onPrimary});
 
   @override
   Widget build(BuildContext context) {
-    return const SizedBox(
+    return SizedBox(
       width: 22,
       height: 22,
-      child: CircularProgressIndicator(strokeWidth: 2.5, color: AppColors.onPrimary),
+      child: CircularProgressIndicator(strokeWidth: 2.5, color: color),
     );
   }
 }

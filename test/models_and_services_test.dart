@@ -4,15 +4,15 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:voom_delivery_app/models/delivery.dart';
-import 'package:voom_delivery_app/models/product.dart';
-import 'package:voom_delivery_app/services/api_client.dart';
-import 'package:voom_delivery_app/services/auth_service.dart';
-import 'package:voom_delivery_app/services/paged_api.dart';
+import 'package:s_delivery/models/delivery.dart';
+import 'package:s_delivery/models/payment.dart';
+import 'package:s_delivery/services/api_client.dart';
+import 'package:s_delivery/services/auth_service.dart';
+import 'package:s_delivery/services/paged_api.dart';
 
 Map<String, dynamic> _delivery([Map<String, dynamic> extra = const {}]) => {
       'id': 7,
-      'reference': 'VD-PAY777',
+      'reference': 'SD-PAY777',
       'type': 'colis',
       'status': 'pending',
       'status_label': 'En attente',

@@ -13,7 +13,7 @@ import 'delivery_service.dart';
 /// Ouvre l'écran correspondant aux données d'une notification (livraison, discussion…).
 typedef PushOpenHandler = void Function(Map<String, dynamic> data);
 
-/// Notifications push (Firebase Cloud Messaging, gratuit) : rappels livreur et promos client.
+/// Notifications push (Firebase Cloud Messaging, gratuit) : suivi des courses, messages et rappels livreur.
 ///
 /// Si Firebase n'est pas configuré (pas de google-services.json), tout est ignoré sans erreur.
 class PushService {
@@ -38,16 +38,21 @@ class PushService {
   static final _chatUpdates = StreamController<int>.broadcast();
   static Stream<int> get chatUpdates => _chatUpdates.stream;
 
+  /// Identifiants des livraisons dont la discussion a reçu un message (client, livreur ou agence).
+  static final _deliveryChatUpdates = StreamController<int>.broadcast();
+  static Stream<int> get deliveryChatUpdates => _deliveryChatUpdates.stream;
+
   static const _urgent = AndroidNotificationChannel(
     'voom_urgent',
     'Livraisons urgentes',
     description: 'Rappels pour les livraisons Express et les heures limites',
     importance: Importance.max,
   );
+  // Identifiants de canaux inchangés : les téléphones déjà installés gardent leurs réglages de notification.
   static const _default = AndroidNotificationChannel(
     'voom_default',
-    'Notifications VOOM',
-    description: 'Promotions et informations',
+    'Livraisons et messages',
+    description: 'Suivi de vos courses et messages du livreur ou de l\'agence',
     importance: Importance.high,
   );
 
@@ -99,6 +104,7 @@ class PushService {
   static void _showForeground(RemoteMessage message) {
     final deliveryId = deliveryIdOf(message.data);
     if (deliveryId != null) _deliveryUpdates.add(deliveryId);
+    if (deliveryId != null && message.data['type']?.toString() == 'delivery_chat') _deliveryChatUpdates.add(deliveryId);
     final requestId = requestIdOf(message.data);
     if (message.data['type']?.toString() == 'chat' && requestId != null) _chatUpdates.add(requestId);
 
@@ -161,6 +167,7 @@ class PushService {
   /// Signale aux écrans ouverts qu'une livraison / une discussion a changé (ils se rechargent).
   static void notifyDeliveryUpdated(int id) => _deliveryUpdates.add(id);
   static void notifyChatUpdated(int id) => _chatUpdates.add(id);
+  static void notifyDeliveryChatUpdated(int id) => _deliveryChatUpdates.add(id);
 
   static Timer? _retry;
   static int _retryCount = 0;

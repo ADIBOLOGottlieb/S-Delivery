@@ -2,21 +2,20 @@ import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:intl/date_symbol_data_local.dart';
-import 'package:voom_delivery_app/main.dart';
-import 'package:voom_delivery_app/models/chat.dart';
-import 'package:voom_delivery_app/models/delivery.dart';
-import 'package:voom_delivery_app/models/product.dart';
-import 'package:voom_delivery_app/models/user.dart';
-import 'package:voom_delivery_app/services/api_client.dart';
-import 'package:voom_delivery_app/widgets/voom_logo.dart';
+import 'package:s_delivery/main.dart';
+import 'package:s_delivery/models/chat.dart';
+import 'package:s_delivery/models/delivery.dart';
+import 'package:s_delivery/models/payment.dart';
+import 'package:s_delivery/models/user.dart';
+import 'package:s_delivery/services/api_client.dart';
+import 'package:s_delivery/widgets/brand_logo.dart';
 
 Map<String, dynamic> _deliveryJson() => {
       'id': 1,
-      'reference': 'VD-ABC123',
+      'reference': 'SD-ABC123',
       'type': 'express',
       'type_label': 'Express',
       'status': 'assigned',
@@ -38,7 +37,6 @@ Map<String, dynamic> _deliveryJson() => {
 
 void main() {
   setUpAll(() async {
-    GoogleFonts.config.allowRuntimeFetching = false;
     await initializeDateFormatting('fr');
   });
 
@@ -46,8 +44,8 @@ void main() {
     FlutterSecureStorage.setMockInitialValues({});
     final api = ApiClient(httpClient: MockClient((_) async => http.Response('{}', 404)));
 
-    await tester.pumpWidget(VoomDeliveryApp(api: api));
-    expect(find.byType(VoomLogo), findsOneWidget);
+    await tester.pumpWidget(SDeliveryApp(api: api));
+    expect(find.byType(SDeliveryMark), findsOneWidget);
 
     await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle();
@@ -91,14 +89,14 @@ void main() {
 
   test('PaymentInfo lit les numéros marchands Flooz / Mixx', () {
     final info = PaymentInfo.fromJson({
-      'merchant_name': 'VOOM Delivery',
+      'merchant_name': 'S-Delivery',
       'instructions': 'Indiquez la référence de la livraison.',
       'methods': [
         {'method': 'flooz', 'label': 'Flooz (Moov Africa)', 'merchant_number': '99 00 00 00'},
         {'method': 'mixx', 'label': 'Mixx by Yas', 'merchant_number': '70 00 00 00'},
       ],
     });
-    expect(info.merchantName, 'VOOM Delivery');
+    expect(info.merchantName, 'S-Delivery');
     expect(info.methods.map((m) => m.method), ['flooz', 'mixx']);
     expect(info.methods.first.merchantNumber, '99 00 00 00');
   });
@@ -166,7 +164,7 @@ void main() {
         },
       ],
       'delivery': {
-        'id': 9, 'reference': 'VD-XYZ123', 'status_label': 'En attente', 'payment_status': 'unpaid',
+        'id': 9, 'reference': 'SD-XYZ123', 'status_label': 'En attente', 'payment_status': 'unpaid',
         'total_amount': 1500, 'can_pay': true,
       },
       'last_message_at': '2026-10-10T09:02:00+00:00',

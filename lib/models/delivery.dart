@@ -95,18 +95,47 @@ class PaymentProof {
       );
 }
 
+/// Position du livreur partagée pendant la course (suivi en direct).
+class LiveLocation {
+  final double lat;
+  final double lng;
+  final DateTime updatedAt;
+
+  const LiveLocation({required this.lat, required this.lng, required this.updatedAt});
+
+  LatLng get latLng => LatLng(lat, lng);
+
+  static LiveLocation? fromJson(dynamic json) => json is Map<String, dynamic> && json['lat'] is num && json['lng'] is num
+      ? LiveLocation(
+          lat: (json['lat'] as num).toDouble(),
+          lng: (json['lng'] as num).toDouble(),
+          updatedAt: DateTime.tryParse('${json['updated_at']}')?.toLocal() ?? DateTime.now(),
+        )
+      : null;
+}
+
 class Person {
   final String name;
   final String? phoneNumber;
   final String? vehicle;
+  final String? avatarUrl;
 
-  const Person({required this.name, this.phoneNumber, this.vehicle});
+  /// Livreur en course : dernière position connue (null hors course ou position trop ancienne).
+  final LiveLocation? location;
+
+  const Person({required this.name, this.phoneNumber, this.vehicle, this.avatarUrl, this.location});
+
+  String get firstName => name.trim().split(RegExp(r'\s+')).first;
+
+  String get initial => name.trim().isEmpty ? '?' : name.trim()[0].toUpperCase();
 
   static Person? fromJson(dynamic json) => json is Map<String, dynamic>
       ? Person(
           name: json['name'] as String? ?? '',
           phoneNumber: json['phone_number'] as String?,
           vehicle: json['vehicle'] as String?,
+          avatarUrl: json['avatar_url'] as String?,
+          location: LiveLocation.fromJson(json['location']),
         )
       : null;
 }
@@ -152,6 +181,24 @@ class Delivery {
   /// Discussion (demande rapide) à l'origine de la livraison, le cas échéant.
   final int? requestId;
 
+  /// Code à 4 chiffres à donner au livreur à la remise (visible du client seul, jusqu'à la livraison).
+  final String? dropoffCode;
+
+  /// Le livreur doit saisir le code du destinataire pour clôturer la course.
+  final bool requiresCode;
+
+  /// Discussion de la course : messages non lus et possibilité d'écrire.
+  final int unreadMessages;
+  final bool chatOpen;
+
+  /// Note donnée au livreur après la livraison (1 à 5).
+  final int? rating;
+  final String? ratingComment;
+  final bool canRate;
+
+  final DateTime? assignedAt;
+  final DateTime? pickedUpAt;
+
   const Delivery({
     required this.id,
     required this.reference,
@@ -182,9 +229,31 @@ class Delivery {
     this.cancelReason,
     this.photos = const [],
     this.requestId,
+    this.dropoffCode,
+    this.requiresCode = false,
+    this.unreadMessages = 0,
+    this.chatOpen = false,
+    this.rating,
+    this.ratingComment,
+    this.canRate = false,
+    this.assignedAt,
+    this.pickedUpAt,
   });
 
   bool get isActive => status != DeliveryStatus.delivered && status != DeliveryStatus.cancelled;
+
+  /// Course en cours chez le livreur : le suivi en direct est possible.
+  bool get isInProgress => status == DeliveryStatus.assigned || status == DeliveryStatus.pickedUp;
+
+  bool get isPaid => paymentStatus == PaymentStatus.verified;
+
+  /// Étape de la course pour la barre de progression : 0 à payer, 1 payée, 2 livreur en route, 3 colis en route, 4 livré.
+  int get progressStep => switch (status) {
+        DeliveryStatus.delivered => 4,
+        DeliveryStatus.pickedUp => 3,
+        DeliveryStatus.assigned => 2,
+        _ => isPaid ? 1 : 0,
+      };
 
   /// Le serveur accepte encore des photos tant que le colis n'est pas récupéré.
   bool get acceptsPhotos => status == DeliveryStatus.pending || status == DeliveryStatus.assigned;
@@ -223,6 +292,15 @@ class Delivery {
         cancelReason: json['cancel_reason'] as String?,
         photos: (json['photos'] as List? ?? const []).whereType<String>().toList(),
         requestId: json['request_id'] as int?,
+        dropoffCode: json['dropoff_code'] as String?,
+        requiresCode: json['requires_code'] as bool? ?? false,
+        unreadMessages: (json['unread_messages'] as num?)?.toInt() ?? 0,
+        chatOpen: json['chat_open'] as bool? ?? false,
+        rating: (json['rating'] as num?)?.toInt(),
+        ratingComment: json['rating_comment'] as String?,
+        canRate: json['can_rate'] as bool? ?? false,
+        assignedAt: _date(json['assigned_at']),
+        pickedUpAt: _date(json['picked_up_at']),
       );
 }
 

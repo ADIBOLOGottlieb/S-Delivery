@@ -7,6 +7,7 @@ import '../utils/app_navigator.dart';
 import '../utils/colors.dart';
 import 'auth/login_screen.dart';
 import 'chat/chat_screen.dart';
+import 'chat/delivery_chat_screen.dart';
 import 'courier/courier_delivery_screen.dart';
 import 'home/delivery_detail_screen.dart';
 import 'splash_screen.dart';
@@ -39,6 +40,13 @@ void openFromNotification(Map<String, dynamic> data) {
       return;
     }
     navigator.push(MaterialPageRoute(builder: (_) => ChatScreen(requestId: requestId)));
+  } else if (type == 'delivery_chat' && deliveryId != null) {
+    // Message du livreur, du client ou de l'agence : discussion de la course.
+    if (ShownScreens.top == ShownScreens.deliveryChatKey(deliveryId)) {
+      PushService.notifyDeliveryChatUpdated(deliveryId);
+      return;
+    }
+    navigator.push(MaterialPageRoute(builder: (_) => DeliveryChatScreen(deliveryId: deliveryId, courier: courier)));
   } else if (deliveryId != null && (type == null || type == 'delivery')) {
     if (ShownScreens.top == ShownScreens.deliveryKey(deliveryId)) {
       PushService.notifyDeliveryUpdated(deliveryId);
@@ -49,7 +57,7 @@ void openFromNotification(Map<String, dynamic> data) {
           courier ? CourierDeliveryScreen(deliveryId: deliveryId) : DeliveryDetailScreen(deliveryId: deliveryId),
     ));
   }
-  // Promotions : l'app s'ouvre simplement sur l'accueil.
+  // Autres notifications : l'app s'ouvre simplement sur l'accueil.
 }
 
 /// Renvoie à la connexion quand la session expire (401) sans déconnexion volontaire,

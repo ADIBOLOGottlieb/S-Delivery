@@ -5,7 +5,7 @@ import '../../services/api_client.dart';
 import '../../services/auth_service.dart';
 import '../../utils/colors.dart';
 import '../../widgets/auth_layout.dart';
-import '../../widgets/voom_logo.dart';
+import '../../widgets/bottom_action_bar.dart';
 import '../splash_screen.dart';
 import 'forgot_password_screen.dart';
 import 'register_screen.dart';
@@ -52,26 +52,21 @@ class _LoginScreenState extends State<LoginScreen> {
     final textTheme = Theme.of(context).textTheme;
 
     return AuthLayout(
-      photo: 'assets/images/photo_courier.jpg',
-      photoAlignment: const Alignment(0, -0.4),
-      tagline: 'Livré vite,\npartout à Lomé',
-      footer: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: Text(
-          "Déjà client de l'agence ou livreur ? Connectez-vous avec le numéro et le mot de passe "
-          'reçus de VOOM, sans vous inscrire.',
-          textAlign: TextAlign.center,
-          style: textTheme.bodySmall,
-        ),
+      title: 'Envoyez et recevez\nvos colis.',
+      subtitle: 'Suivi en direct, paiement mobile et livreurs de confiance, partout à Lomé.',
+      footer: Text(
+        "Déjà client de l'agence ou livreur ? Connectez-vous avec le numéro et le mot de passe "
+        'reçus de S‑Delivery, sans vous inscrire.',
+        textAlign: TextAlign.center,
+        style: textTheme.bodySmall,
       ),
       card: Form(
         key: _formKey,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Center(child: VoomLogo(width: 170)),
-            const SizedBox(height: 10),
-            Text('Connectez-vous à votre compte', textAlign: TextAlign.center, style: textTheme.bodyMedium),
+            // Titre attendu par les tests et lu en premier par les lecteurs d'écran.
+            Text('Connectez-vous à votre compte', style: textTheme.headlineSmall),
             const SizedBox(height: 20),
             TextFormField(
               controller: _loginController,
@@ -80,12 +75,12 @@ class _LoginScreenState extends State<LoginScreen> {
               autofillHints: const [AutofillHints.username],
               decoration: const InputDecoration(
                 labelText: 'Email ou téléphone',
-                prefixIcon: Icon(Icons.person_outline),
+                prefixIcon: Icon(Icons.person_outline_rounded),
               ),
               validator: (value) =>
                   (value == null || value.trim().isEmpty) ? 'Saisissez votre email ou téléphone' : null,
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
             TextFormField(
               controller: _passwordController,
               obscureText: _obscurePassword,
@@ -93,7 +88,7 @@ class _LoginScreenState extends State<LoginScreen> {
               onFieldSubmitted: (_) => _login(),
               decoration: InputDecoration(
                 labelText: 'Mot de passe',
-                prefixIcon: const Icon(Icons.lock_outlined),
+                prefixIcon: const Icon(Icons.lock_outline_rounded),
                 suffixIcon: IconButton(
                   tooltip: _obscurePassword ? 'Afficher' : 'Masquer',
                   icon: Icon(_obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined),
@@ -111,32 +106,17 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: const Text('Mot de passe oublié ?'),
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
             Consumer<AuthService>(
               builder: (context, auth, _) => ElevatedButton(
                 onPressed: auth.isLoading ? null : _login,
-                child: auth.isLoading
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2.5, color: AppColors.onPrimary),
-                      )
-                    : const Text('Se connecter'),
+                child: auth.isLoading ? const ButtonProgress() : const Text('Se connecter'),
               ),
             ),
-            const SizedBox(height: 10),
-            Wrap(
-              alignment: WrapAlignment.center,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                Text('Pas encore de compte ?', style: textTheme.bodyMedium),
-                TextButton(
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const RegisterScreen()),
-                  ),
-                  child: const Text("S'inscrire"),
-                ),
-              ],
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const RegisterScreen())),
+              child: const Text('Créer un compte'),
             ),
           ],
         ),

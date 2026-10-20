@@ -4,12 +4,12 @@ import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../services/push_service.dart';
 import '../utils/colors.dart';
-import '../widgets/voom_logo.dart';
+import '../widgets/brand_logo.dart';
 import 'auth/login_screen.dart';
 import 'courier/courier_home_screen.dart';
 import 'home/main_screen.dart';
 
-/// Écran d'accueil animé ; restaure la session puis redirige selon le rôle.
+/// Écran de démarrage (noir, logo animé) ; restaure la session puis redirige selon le rôle.
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -24,30 +24,29 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _fade;
-  late final Animation<double> _scale;
+  late final AnimationController _controller =
+      AnimationController(duration: const Duration(milliseconds: 1100), vsync: this)..forward();
+  late final Animation<double> _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+  late final Animation<double> _scale =
+      Tween<double>(begin: 0.85, end: 1).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutBack));
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(duration: const Duration(milliseconds: 1500), vsync: this);
-    _fade = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
-    _scale = Tween<double>(begin: 0.5, end: 1).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.elasticOut),
-    );
-    _controller.forward();
     _start();
   }
 
   Future<void> _start() async {
     final auth = context.read<AuthService>();
     // Attend à la fois la restauration de session et une durée minimale d'animation.
-    await Future.wait([auth.init(), Future.delayed(const Duration(milliseconds: 1800))]);
+    await Future.wait([auth.init(), Future.delayed(const Duration(milliseconds: 1500))]);
     // Session expirée pendant le démarrage : SessionGuard a déjà affiché la connexion.
     if (!mounted) return PushService.markAppReady();
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => SplashScreen.homeFor(auth)),
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => SplashScreen.homeFor(auth),
+        transitionsBuilder: (_, animation, __, child) => FadeTransition(opacity: animation, child: child),
+      ),
     );
     // Notification touchée pour lancer l'app : ouverte par-dessus l'accueil.
     PushService.markAppReady();
@@ -61,23 +60,21 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
     return Scaffold(
-      backgroundColor: AppColors.primary,
+      backgroundColor: AppColors.ink,
       body: Center(
         child: FadeTransition(
           opacity: _fade,
           child: ScaleTransition(
             scale: _scale,
-            child: Column(
+            child: const Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const VoomLogo.stacked(width: 260),
-                const SizedBox(height: 24),
-                Text(
-                  'Plis & Colis • Courses alimentaires',
-                  style: textTheme.bodyMedium?.copyWith(color: AppColors.secondary),
-                ),
+                SDeliveryMark(size: 96, background: null),
+                SizedBox(height: 20),
+                SDeliveryLogo(height: 40, light: true, showMark: false),
+                SizedBox(height: 10),
+                Text('Livré vite, partout à Lomé', style: TextStyle(color: Colors.white60, fontSize: 14)),
               ],
             ),
           ),

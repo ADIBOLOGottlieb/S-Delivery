@@ -1,34 +1,44 @@
 import 'package:flutter/material.dart';
 
-/// Palette VOOM Delivery : jaune et noir de la marque, sur des fonds crème chauds
-/// plutôt que du blanc pur (moins éblouissant au soleil, plus chaleureux).
+/// Palette S-Delivery, inspirée des apps de mobilité : fonds blancs, noir d'encre pour l'action,
+/// gris neutres pour les surfaces, et un seul accent lime réservé à la marque et au suivi en direct.
 class AppColors {
   // Marque
-  static const Color primary = Color(0xFFFAC223); // Jaune officiel VOOM (logo)
-  static const Color primaryDark = Color(0xFFE0A800); // Jaune plus foncé (bordures, accents)
-  static const Color primarySoft = Color(0xFFFFE7A3); // Jaune pâle (puces, sélection)
-  static const Color secondary = Color(0xFF16130E); // Noir chaud
-  static const Color onPrimary = Color(0xFF16130E); // Texte sur jaune
-  static const Color onSecondary = Color(0xFFFFFFFF); // Texte sur noir
+  static const Color ink = Color(0xFF0A0A0A); // Noir d'encre : boutons, titres, icônes actives
+  static const Color accent = Color(0xFFC6FF3D); // Lime S-Delivery : logo, suivi, mises en avant
+  static const Color onAccent = ink;
 
-  // Surfaces (du plus foncé au plus clair)
-  static const Color background = Color(0xFFFFF3D6); // Fond des écrans : crème chaud
-  static const Color surface = Color(0xFFFBE9C0); // Zones atténuées : champs, puces, rails
-  static const Color card = Color(0xFFFFFAEB); // Cartes : ivoire, jamais blanc pur
-  static const Color border = Color(0xFFF0DCA6); // Contours doux
+  /// Action principale (boutons pleins, sélection) : noir.
+  static const Color primary = ink;
+  static const Color onPrimary = Colors.white;
+
+  /// Fond des sélections et puces atténuées.
+  static const Color primarySoft = Color(0xFFF3F3F3);
+  static const Color primaryDark = ink;
+
+  /// Blocs sombres (cartes de suivi, bandeaux) : noir, texte blanc.
+  static const Color secondary = ink;
+  static const Color onSecondary = Colors.white;
+
+  // Surfaces (du plus clair au plus foncé)
+  static const Color background = Colors.white; // Fond des écrans
+  static const Color card = Colors.white; // Cartes
+  static const Color surface = Color(0xFFF3F3F3); // Champs, tuiles, rails
+  static const Color surfaceStrong = Color(0xFFE8E8E8); // Tuiles appuyées, séparateurs épais
+  static const Color border = Color(0xFFEAEAEA); // Contours fins
   static const Color cream = background;
 
-  static const Color onBackground = Color(0xFF16130E);
-  static const Color onSurface = Color(0xFF16130E);
+  static const Color onBackground = ink;
+  static const Color onSurface = ink;
 
-  // Couleurs d'état
-  static const Color success = Color(0xFF2E9D57);
-  static const Color warning = Color(0xFFEF8A17);
-  static const Color error = Color(0xFFD93A2F);
-  static const Color info = Color(0xFF2F7DE1);
+  // Couleurs d'état (contraste ≥ 4,5:1 sur blanc pour le texte)
+  static const Color success = Color(0xFF05944F);
+  static const Color warning = Color(0xFFB45309);
+  static const Color error = Color(0xFFE11900);
+  static const Color info = Color(0xFF276EF1);
 
-  // Texte (gris chauds, contraste ≥ 4,5:1 sur crème)
-  static const Color textPrimary = Color(0xFF16130E);
-  static const Color textSecondary = Color(0xFF5F5644);
-  static const Color textHint = Color(0xFF8C8069);
+  // Texte
+  static const Color textPrimary = ink;
+  static const Color textSecondary = Color(0xFF5E5E5E);
+  static const Color textHint = Color(0xFF8A8A8A);
 }

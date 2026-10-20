@@ -14,6 +14,7 @@ class ShownScreens {
 
   static String deliveryKey(int id) => 'delivery:$id';
   static String chatKey(int id) => 'chat:$id';
+  static String deliveryChatKey(int id) => 'delivery-chat:$id';
 
   static void enter(String key) => _keys.add(key);
   static void leave(String key) => _keys.remove(key);

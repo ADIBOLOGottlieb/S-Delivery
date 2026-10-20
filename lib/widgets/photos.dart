@@ -28,8 +28,8 @@ Future<String?> pickPhoto(BuildContext context, {VoidCallback? onRemove}) async 
           ),
           ListTile(
             leading: const CircleAvatar(
-              backgroundColor: AppColors.secondary,
-              child: Icon(Icons.photo_library, color: AppColors.primary),
+              backgroundColor: AppColors.surface,
+              child: Icon(Icons.photo_library, color: AppColors.ink),
             ),
             title: const Text('Choisir dans la galerie'),
             onTap: () => Navigator.pop(context, ImageSource.gallery),
@@ -183,9 +183,9 @@ class LocalPhotoGrid extends StatelessWidget {
               width: 92,
               height: 92,
               decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.15),
+                color: AppColors.surface,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppColors.primaryDark, width: 1.5),
+                border: Border.all(color: AppColors.surfaceStrong, width: 1.5),
               ),
               child: const Column(
                 mainAxisAlignment: MainAxisAlignment.center,

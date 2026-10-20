@@ -1,6 +1,6 @@
-# VOOM Delivery — API & administration
+# S-Delivery — API & administration
 
-API REST (Laravel 13 + Sanctum) et panneau d'administration web de VOOM Delivery.
+API REST (Laravel 13 + Sanctum) et panneau d'administration web de S-Delivery.
 Voir le [README principal](../README.md) pour le fonctionnement global, l'installation et le déploiement Render.
 
 ## Organisation

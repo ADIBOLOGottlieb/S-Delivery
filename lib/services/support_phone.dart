@@ -1,5 +1,5 @@
 import '../config/api_config.dart';
-import '../models/product.dart';
+import '../models/payment.dart';
 import 'api_client.dart';
 
 /// Numéro de l'agence et liens publics, lus depuis GET /payment-info (renseignés par l'admin).

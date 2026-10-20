@@ -1,21 +1,26 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/delivery.dart';
-import '../../models/product.dart';
+import '../../models/payment.dart';
 import '../../services/api_client.dart';
 import '../../services/auth_service.dart';
 import '../../services/delivery_service.dart';
 import '../../utils/colors.dart';
 import '../../utils/formatters.dart';
 import '../../widgets/bottom_action_bar.dart';
+import '../../widgets/ui.dart';
 
-/// Paiement d'une livraison par Flooz ou Mixx by Yas : virement au numéro marchand
-/// de l'agence, puis capture d'écran de la transaction, vérifiée par l'agence.
+/// Paiement d'une livraison :
+/// - en ligne (Flooz, Mixx by Yas, carte) quand l'agence a activé un agrégateur, avec confirmation automatique ;
+/// - sinon (ou en repli) virement au numéro marchand puis capture d'écran vérifiée par l'agence.
+/// Renvoie la livraison à jour via Navigator.pop.
 class PaymentScreen extends StatefulWidget {
   final Delivery delivery;
 
@@ -25,12 +30,430 @@ class PaymentScreen extends StatefulWidget {
   State<PaymentScreen> createState() => _PaymentScreenState();
 }
 
-class _PaymentScreenState extends State<PaymentScreen> {
+class _PaymentScreenState extends State<PaymentScreen> with WidgetsBindingObserver {
+  late Future<PaymentInfo> _info = context.read<DeliveryService>().paymentInfo();
+  late final _phone = TextEditingController(text: context.read<AuthService>().user?.phoneNumber);
+
+  String? _method;
+  bool _manual = false;
+  bool _starting = false;
+
+  /// Paiement en ligne lancé : en attente de la validation par le client.
+  CheckoutResult? _pending;
+  bool _failed = false;
+  Timer? _poll;
+  DateTime? _pendingSince;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _poll?.cancel();
+    _phone.dispose();
+    super.dispose();
+  }
+
+  /// Retour dans l'app après la page de paiement : vérification immédiate.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _pending != null) _check();
+  }
+
+  void _error(String msg) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: AppColors.error));
+
+  Future<void> _start() async {
+    if (_method == null) return _error('Choisissez un moyen de paiement.');
+    final phone = _phone.text.trim();
+    if (phone.replaceAll(RegExp(r'\D'), '').length < 8) return _error('Indiquez le numéro qui va payer.');
+
+    setState(() => _starting = true);
+    try {
+      final result = await context.read<DeliveryService>().checkout(widget.delivery.id, method: _method!, phone: phone);
+      if (!mounted) return;
+      setState(() {
+        _pending = result;
+        _failed = false;
+        _pendingSince = DateTime.now();
+      });
+      if (result.opensPage) await _openPage(result.redirectUrl!);
+      _poll?.cancel();
+      _poll = Timer.periodic(const Duration(seconds: 4), (_) => _check());
+    } on ApiException catch (e) {
+      if (mounted) _error(e.message);
+    } finally {
+      if (mounted) setState(() => _starting = false);
+    }
+  }
+
+  Future<void> _openPage(String url) async {
+    try {
+      final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      if (!ok && mounted) _error('Impossible d\'ouvrir la page de paiement.');
+    } catch (_) {
+      if (mounted) _error('Impossible d\'ouvrir la page de paiement.');
+    }
+  }
+
+  bool _checking = false;
+
+  Future<void> _check() async {
+    final pending = _pending;
+    if (pending == null || _checking) return;
+    _checking = true;
+    try {
+      final r = await context.read<DeliveryService>().paymentStatus(widget.delivery.id, pending.paymentId);
+      if (!mounted) return;
+      if (r.status == 'verified') {
+        _poll?.cancel();
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Paiement confirmé. Un livreur va être assigné.'),
+          backgroundColor: AppColors.success,
+        ));
+        Navigator.of(context).pop(r.delivery);
+      } else if (r.status == 'failed' || r.status == 'rejected') {
+        _poll?.cancel();
+        setState(() {
+          _pending = null;
+          _failed = true;
+        });
+      } else if (_pendingSince != null && DateTime.now().difference(_pendingSince!) > const Duration(minutes: 12)) {
+        _poll?.cancel();
+      }
+    } catch (_) {
+      // Réseau momentanément coupé : nouvel essai au prochain tour.
+    } finally {
+      _checking = false;
+    }
+  }
+
+  void _stopWaiting() {
+    _poll?.cancel();
+    setState(() => _pending = null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Paiement')),
+      body: FutureBuilder<PaymentInfo>(
+        future: _info,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            final error = snapshot.error;
+            return _Message(
+              icon: Icons.cloud_off_rounded,
+              text: error is ApiException
+                  ? error.message
+                  : 'Impossible de charger les moyens de paiement. Vérifiez votre connexion.',
+              action: OutlinedButton(
+                onPressed: () => setState(() => _info = context.read<DeliveryService>().paymentInfo()),
+                child: const Text('Réessayer'),
+              ),
+            );
+          }
+          final info = snapshot.data!;
+          if (info.isEmpty) {
+            return const _Message(
+              icon: Icons.payments_outlined,
+              text: "Le paiement n'est pas encore configuré par l'agence. Contactez S-Delivery.",
+            );
+          }
+          if (_pending != null) return _waiting(_pending!);
+          if (!info.online.enabled || _manual) {
+            return _ManualPayment(
+              delivery: widget.delivery,
+              info: info,
+              onBack: info.online.enabled ? () => setState(() => _manual = false) : null,
+            );
+          }
+          return _online(info);
+        },
+      ),
+      bottomNavigationBar: FutureBuilder<PaymentInfo>(
+        future: _info,
+        builder: (context, snapshot) {
+          final info = snapshot.data;
+          if (info == null || !info.online.enabled || _manual || _pending != null) return const SizedBox.shrink();
+          return BottomActionBar(
+            children: [
+              ElevatedButton(
+                onPressed: _starting ? null : _start,
+                child: _starting ? const ButtonProgress() : Text('Payer ${formatFcfa(widget.delivery.totalAmount)}'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _online(PaymentInfo info) {
+    final methods = info.online.methods;
+    final card = methods.any((m) => m.method == _method && m.isCard);
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+      children: [
+        _Amount(amount: widget.delivery.totalAmount, reference: widget.delivery.reference),
+        if (info.online.simulation)
+          Container(
+            margin: const EdgeInsets.only(top: 16),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: const Color(0xFFFFF4E5), borderRadius: BorderRadius.circular(12)),
+            child: const Text(
+              'Mode démonstration : aucun argent ne sera débité.',
+              style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.warning),
+            ),
+          ),
+        if (_failed)
+          Container(
+            margin: const EdgeInsets.only(top: 16),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: AppColors.error.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(12)),
+            child: const Text(
+              "Paiement non abouti : aucun montant n'a été validé. Vous pouvez réessayer.",
+              style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.error),
+            ),
+          ),
+        const SectionTitle('Moyen de paiement'),
+        for (final m in methods)
+          _MethodRow(
+            method: m.method,
+            label: m.label,
+            subtitle: m.isCard ? 'Visa, Mastercard · page sécurisée' : 'Validation avec votre code secret',
+            selected: _method == m.method,
+            onTap: () => setState(() => _method = m.method),
+          ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _phone,
+          keyboardType: TextInputType.phone,
+          decoration: InputDecoration(
+            labelText: card ? 'Votre numéro de téléphone' : 'Numéro qui va payer',
+            prefixIcon: const Icon(Icons.phone_android_rounded),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            const Icon(Icons.lock_outline_rounded, size: 16, color: AppColors.textSecondary),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'Paiement sécurisé. Votre livraison est confirmée automatiquement dès la validation.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ],
+        ),
+        if (info.methods.isNotEmpty) ...[
+          const SizedBox(height: 20),
+          const Divider(),
+          ListRow(
+            icon: Icons.receipt_long_outlined,
+            title: 'Déjà payé par virement ?',
+            subtitle: 'Envoyer la capture de la transaction',
+            onTap: () => setState(() => _manual = true),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _waiting(CheckoutResult pending) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(24, 48, 24, 24),
+      children: [
+        const Center(child: SizedBox(width: 56, height: 56, child: CircularProgressIndicator(strokeWidth: 4))),
+        const SizedBox(height: 28),
+        Text(
+          pending.opensPage ? 'Finalisez le paiement' : 'Validez sur votre téléphone',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.headlineSmall,
+        ),
+        const SizedBox(height: 10),
+        Text(
+          pending.message.isNotEmpty
+              ? pending.message
+              : 'Nous attendons la confirmation de votre opérateur.',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          formatFcfa(widget.delivery.totalAmount),
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.headlineMedium,
+        ),
+        const SizedBox(height: 28),
+        if (pending.opensPage)
+          ElevatedButton.icon(
+            onPressed: () => _openPage(pending.redirectUrl!),
+            icon: const Icon(Icons.open_in_new_rounded),
+            label: const Text('Rouvrir la page de paiement'),
+          ),
+        const SizedBox(height: 8),
+        FilledButton(onPressed: _check, child: const Text("J'ai validé le paiement")),
+        const SizedBox(height: 8),
+        TextButton(onPressed: _stopWaiting, child: const Text('Changer de moyen de paiement')),
+      ],
+    );
+  }
+}
+
+class _Amount extends StatelessWidget {
+  final int amount;
+  final String reference;
+
+  const _Amount({required this.amount, required this.reference});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Montant à payer', style: Theme.of(context).textTheme.bodyMedium),
+        Text(formatFcfa(amount), style: Theme.of(context).textTheme.displaySmall),
+        Text('Livraison $reference', style: Theme.of(context).textTheme.bodySmall),
+      ],
+    );
+  }
+}
+
+class _Message extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final Widget? action;
+
+  const _Message({required this.icon, required this.text, this.action});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconSquare(icon, size: 64),
+            const SizedBox(height: 16),
+            Text(text, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyLarge),
+            if (action != null) ...[const SizedBox(height: 16), action!],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Logo simplifié d'un moyen de paiement.
+class _MethodBadge extends StatelessWidget {
+  final String method;
+
+  const _MethodBadge({required this.method});
+
+  @override
+  Widget build(BuildContext context) {
+    final (Color bg, Color fg, Widget child) = switch (method) {
+      'mixx' => (const Color(0xFFFFD400), AppColors.ink, const Text('M', style: TextStyle(fontWeight: FontWeight.w800))),
+      'card' => (AppColors.ink, Colors.white, const Icon(Icons.credit_card_rounded, size: 20, color: Colors.white)),
+      _ => (const Color(0xFF0066B3), Colors.white, const Text('F', style: TextStyle(fontWeight: FontWeight.w800, color: Colors.white))),
+    };
+    return Container(
+      width: 44,
+      height: 44,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12)),
+      child: DefaultTextStyle.merge(style: TextStyle(color: fg, fontSize: 18), child: child),
+    );
+  }
+}
+
+/// Moyen de paiement sélectionnable (bordure noire quand choisi).
+class _MethodRow extends StatelessWidget {
+  final String method;
+  final String label;
+  final String? subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _MethodRow({
+    required this.method,
+    required this.label,
+    this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      selected: selected,
+      button: true,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Material(
+          color: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(color: selected ? AppColors.ink : AppColors.border, width: selected ? 2 : 1),
+          ),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(14),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  _MethodBadge(method: method),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.ink)),
+                        if (subtitle != null) Text(subtitle!, style: Theme.of(context).textTheme.bodySmall),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    selected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded,
+                    color: selected ? AppColors.ink : AppColors.textHint,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Paiement manuel : virement au numéro marchand puis capture d'écran de la transaction.
+class _ManualPayment extends StatefulWidget {
+  final Delivery delivery;
+  final PaymentInfo info;
+  final VoidCallback? onBack;
+
+  const _ManualPayment({required this.delivery, required this.info, this.onBack});
+
+  @override
+  State<_ManualPayment> createState() => _ManualPaymentState();
+}
+
+class _ManualPaymentState extends State<_ManualPayment> {
   final _formKey = GlobalKey<FormState>();
   final _refController = TextEditingController();
   late final _phoneController = TextEditingController(text: context.read<AuthService>().user?.phoneNumber);
-
-  late Future<PaymentInfo> _info = context.read<DeliveryService>().paymentInfo();
   String? _method;
   XFile? _screenshot;
   bool _sending = false;
@@ -44,9 +467,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
   void _error(String msg) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: AppColors.error));
-
-  /// Moyens de paiement non chargés (réseau) : nouvel essai.
-  void _retryInfo() => setState(() => _info = context.read<DeliveryService>().paymentInfo());
 
   Future<void> _pickScreenshot() async {
     final XFile? file;
@@ -69,12 +489,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
     setState(() => _sending = true);
     try {
       final updated = await service.submitPayment(
-            deliveryId: widget.delivery.id,
-            method: _method!,
-            transactionRef: _refController.text.trim(),
-            payerPhone: _phoneController.text.trim(),
-            screenshotPath: _screenshot!.path,
-          );
+        deliveryId: widget.delivery.id,
+        method: _method!,
+        transactionRef: _refController.text.trim(),
+        payerPhone: _phoneController.text.trim(),
+        screenshotPath: _screenshot!.path,
+      );
       if (!mounted) return;
       messenger.showSnackBar(const SnackBar(
         content: Text("Preuve envoyée. Vous serez informé dès que l'agence l'aura vérifiée."),
@@ -111,317 +531,119 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Paiement')),
-      body: FutureBuilder<PaymentInfo>(
-        future: _info,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            final error = snapshot.error;
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.cloud_off, size: 48, color: AppColors.textHint),
-                    const SizedBox(height: 12),
-                    Text(
-                      error is ApiException
-                          ? error.message
-                          : 'Impossible de charger les moyens de paiement. Vérifiez votre connexion.',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: AppColors.error),
-                    ),
-                    const SizedBox(height: 12),
-                    OutlinedButton(onPressed: _retryInfo, child: const Text('Réessayer')),
-                  ],
-                ),
-              ),
-            );
-          }
-          final info = snapshot.data!;
-          if (info.methods.isEmpty) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  "Le paiement mobile n'est pas encore configuré par l'agence. Contactez VOOM Delivery.",
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            );
-          }
-          return Form(key: _formKey, child: _form(info));
-        },
-      ),
-      bottomNavigationBar: BottomActionBar(
-        children: [
-          ElevatedButton.icon(
-            onPressed: _sending ? null : _submit,
-            icon: _sending ? const ButtonProgress() : const Icon(Icons.send_rounded),
-            label: const Text('Envoyer la preuve'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _form(PaymentInfo info) {
+    final info = widget.info;
     final selected = info.methods.where((m) => m.method == _method).firstOrNull;
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-      children: [
-        _AmountCard(amount: widget.delivery.totalAmount, reference: widget.delivery.reference),
-        const SizedBox(height: 22),
-        const _Step(number: 1, title: 'Choisissez votre moyen de paiement'),
-        for (final m in info.methods)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: _MethodTile(method: m, selected: _method == m.method, onTap: () => setState(() => _method = m.method)),
-          ),
-        if (selected != null) ...[
-          const SizedBox(height: 12),
-          const _Step(number: 2, title: 'Envoyez le montant à ce numéro'),
-          _MerchantCard(name: info.merchantName, number: selected.merchantNumber),
-          if (info.instructions != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 10),
-              child: Text(info.instructions!, style: Theme.of(context).textTheme.bodyMedium),
-            ),
-          const SizedBox(height: 22),
-          const _Step(number: 3, title: 'Envoyez la preuve de paiement'),
-          TextFormField(
-            controller: _refController,
-            decoration: const InputDecoration(
-              labelText: 'Référence / ID de la transaction',
-              helperText: 'Indiquée dans le SMS de confirmation',
-              prefixIcon: Icon(Icons.receipt_long),
-            ),
-            validator: (v) => (v == null || v.trim().isEmpty) ? 'Référence requise' : null,
-          ),
-          const SizedBox(height: 12),
-          TextFormField(
-            controller: _phoneController,
-            keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(
-              labelText: 'Numéro ayant effectué le paiement',
-              prefixIcon: Icon(Icons.phone_android),
-            ),
-            validator: (v) => (v ?? '').replaceAll(RegExp(r'\D'), '').length < 8 ? 'Numéro invalide' : null,
-          ),
-          const SizedBox(height: 12),
-          _ScreenshotPicker(file: _screenshot, onTap: _pickScreenshot),
-        ],
-      ],
-    );
-  }
-}
-
-/// Montant à payer, en bloc noir et jaune bien visible.
-class _AmountCard extends StatelessWidget {
-  final int amount;
-  final String reference;
-
-  const _AmountCard({required this.amount, required this.reference});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: AppColors.secondary,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 16, offset: Offset(0, 8))],
-      ),
-      child: Row(
+    return Form(
+      key: _formKey,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
         children: [
-          const CircleAvatar(
-            radius: 26,
-            backgroundColor: AppColors.primary,
-            child: Icon(Icons.payments_rounded, color: AppColors.onPrimary, size: 28),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Montant à payer', style: TextStyle(color: Colors.white70)),
-                Text(
-                  formatFcfa(amount),
-                  style: const TextStyle(color: AppColors.primary, fontSize: 28, fontWeight: FontWeight.w800),
-                ),
-                Text('Livraison $reference', style: const TextStyle(color: Colors.white60, fontSize: 12.5)),
-              ],
+          if (widget.onBack != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: widget.onBack,
+                icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                label: const Text('Payer directement dans l\'app'),
+              ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Titre d'étape numérotée (1, 2, 3).
-class _Step extends StatelessWidget {
-  final int number;
-  final String title;
-
-  const _Step({required this.number, required this.title});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 13,
-            backgroundColor: AppColors.primary,
-            child: Text('$number',
-                style: const TextStyle(color: AppColors.onPrimary, fontWeight: FontWeight.w800, fontSize: 13)),
-          ),
-          const SizedBox(width: 10),
-          Expanded(child: Text(title, style: Theme.of(context).textTheme.titleMedium)),
-        ],
-      ),
-    );
-  }
-}
-
-/// Numéro marchand en grand, avec copie en un appui.
-class _MerchantCard extends StatelessWidget {
-  final String name;
-  final String number;
-
-  const _MerchantCard({required this.name, required this.number});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(18, 14, 8, 14),
-      decoration: BoxDecoration(
-        color: AppColors.primarySoft,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.primaryDark),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(name, style: Theme.of(context).textTheme.bodyMedium),
-                Text(number, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: 1)),
-              ],
-            ),
-          ),
-          IconButton.filled(
-            tooltip: 'Copier le numéro',
-            style: IconButton.styleFrom(backgroundColor: AppColors.secondary, foregroundColor: AppColors.primary),
-            icon: const Icon(Icons.copy_rounded),
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: number));
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Numéro copié')));
-            },
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Zone d'ajout de la capture d'écran, avec aperçu.
-class _ScreenshotPicker extends StatelessWidget {
-  final XFile? file;
-  final VoidCallback onTap;
-
-  const _ScreenshotPicker({required this.file, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.card,
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: file == null ? AppColors.primaryDark : AppColors.success, width: 1.5),
-          ),
-          child: file == null
-              ? const Column(
-                  children: [
-                    SizedBox(height: 8),
-                    Icon(Icons.add_photo_alternate_outlined, size: 40, color: AppColors.textSecondary),
-                    SizedBox(height: 6),
-                    Text("Ajouter la capture d'écran", style: TextStyle(fontWeight: FontWeight.w700)),
-                    SizedBox(height: 8),
-                  ],
-                )
-              : Column(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.file(File(file!.path), height: 240, fit: BoxFit.contain),
+          _Amount(amount: widget.delivery.totalAmount, reference: widget.delivery.reference),
+          const SectionTitle('1. Moyen de paiement'),
+          for (final m in info.methods)
+            _MethodRow(method: m.method, label: m.label, selected: _method == m.method, onTap: () => setState(() => _method = m.method)),
+          if (selected != null) ...[
+            const SectionTitle('2. Envoyez le montant à ce numéro'),
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+              decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(14)),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(info.merchantName, style: Theme.of(context).textTheme.bodyMedium),
+                        Text(selected.merchantNumber,
+                            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: 1)),
+                      ],
                     ),
-                    const SizedBox(height: 8),
-                    const Text('Changer la capture', style: TextStyle(fontWeight: FontWeight.w700)),
-                  ],
-                ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Moyen de paiement sélectionnable.
-class _MethodTile extends StatelessWidget {
-  final PaymentMethodInfo method;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _MethodTile({required this.method, required this.selected, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final mixx = method.method == 'mixx';
-    return Semantics(
-      selected: selected,
-      button: true,
-      child: Material(
-        color: selected ? AppColors.primarySoft : AppColors.card,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-          side: BorderSide(color: selected ? AppColors.secondary : AppColors.border, width: selected ? 2 : 1),
-        ),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(18),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 20,
-                  backgroundColor: mixx ? const Color(0xFFFFD400) : const Color(0xFF0066B3),
-                  child: Icon(Icons.phone_iphone, color: mixx ? AppColors.onPrimary : Colors.white, size: 20),
-                ),
-                const SizedBox(width: 12),
-                Expanded(child: Text(method.label, style: Theme.of(context).textTheme.titleMedium)),
-                Icon(
-                  selected ? Icons.check_circle_rounded : Icons.radio_button_off,
-                  color: selected ? AppColors.secondary : AppColors.textHint,
-                ),
-              ],
+                  ),
+                  IconButton.filled(
+                    tooltip: 'Copier le numéro',
+                    style: IconButton.styleFrom(backgroundColor: AppColors.ink, foregroundColor: Colors.white),
+                    icon: const Icon(Icons.copy_rounded),
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: selected.merchantNumber));
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Numéro copié')));
+                    },
+                  ),
+                ],
+              ),
             ),
-          ),
-        ),
+            if (info.instructions != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text(info.instructions!, style: Theme.of(context).textTheme.bodyMedium),
+              ),
+            const SectionTitle('3. Envoyez la preuve'),
+            TextFormField(
+              controller: _refController,
+              decoration: const InputDecoration(
+                labelText: 'Référence / ID de la transaction',
+                helperText: 'Indiquée dans le SMS de confirmation',
+                prefixIcon: Icon(Icons.receipt_long_outlined),
+              ),
+              validator: (v) => (v == null || v.trim().isEmpty) ? 'Référence requise' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _phoneController,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(
+                labelText: 'Numéro ayant effectué le paiement',
+                prefixIcon: Icon(Icons.phone_android_rounded),
+              ),
+              validator: (v) => (v ?? '').replaceAll(RegExp(r'\D'), '').length < 8 ? 'Numéro invalide' : null,
+            ),
+            const SizedBox(height: 12),
+            Material(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(14),
+              child: InkWell(
+                onTap: _pickScreenshot,
+                borderRadius: BorderRadius.circular(14),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: _screenshot == null
+                      ? const Column(
+                          children: [
+                            SizedBox(height: 8),
+                            Icon(Icons.add_photo_alternate_outlined, size: 36),
+                            SizedBox(height: 6),
+                            Text("Ajouter la capture d'écran", style: TextStyle(fontWeight: FontWeight.w700)),
+                            SizedBox(height: 8),
+                          ],
+                        )
+                      : Column(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Image.file(File(_screenshot!.path), height: 240, fit: BoxFit.contain),
+                            ),
+                            const SizedBox(height: 8),
+                            const Text('Changer la capture', style: TextStyle(fontWeight: FontWeight.w700)),
+                          ],
+                        ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: _sending ? null : _submit,
+              child: _sending ? const ButtonProgress() : const Text('Envoyer la preuve'),
+            ),
+          ],
+        ],
       ),
     );
   }

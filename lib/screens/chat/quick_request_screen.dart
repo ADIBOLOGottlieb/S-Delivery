@@ -61,7 +61,7 @@ class _QuickRequestScreenState extends State<QuickRequestScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.cream,
-      appBar: AppBar(title: const Text('Programmation par photo')),
+      appBar: AppBar(title: const Text('Commander par photo')),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
@@ -94,8 +94,8 @@ class _QuickRequestScreenState extends State<QuickRequestScreen> {
                   child: _BigButton(
                     icon: Icons.photo_library,
                     label: 'Galerie',
-                    background: AppColors.secondary,
-                    foreground: AppColors.primary,
+                    background: AppColors.surface,
+                    foreground: AppColors.ink,
                     onTap: _sending ? null : _gallery,
                   ),
                 ),
@@ -156,7 +156,6 @@ class _BigButton extends StatelessWidget {
       child: Material(
         color: background,
         borderRadius: BorderRadius.circular(24),
-        elevation: 2,
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(24),

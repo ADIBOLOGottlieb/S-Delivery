@@ -7,7 +7,6 @@ import '../../services/support_phone.dart';
 import '../../utils/colors.dart';
 import '../../utils/launchers.dart';
 import '../../widgets/auth_layout.dart';
-import '../../widgets/voom_logo.dart';
 import '../home/main_screen.dart';
 
 /// Inscription des clients. Les comptes livreurs sont créés par l'admin.
@@ -65,23 +64,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     return AuthLayout(
-      photo: 'assets/images/photo_courier_bags.jpg',
-      photoAlignment: const Alignment(0, -0.35),
-      tagline: 'Créez votre compte\nen 1 minute',
-      heroHeight: 220,
+      title: 'Créez votre compte\nen 1 minute.',
+      subtitle: 'Demandez vos livraisons en quelques secondes.',
       showBack: true,
       card: Form(
             key: _formKey,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Center(child: VoomLogo(width: 140)),
-                const SizedBox(height: 10),
-                Text('Créer un compte client',
-                    textAlign: TextAlign.center, style: Theme.of(context).textTheme.headlineSmall),
-                const SizedBox(height: 4),
-                Text('Demandez vos livraisons en quelques secondes.',
-                    textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium),
+                Text('Créer un compte client', style: Theme.of(context).textTheme.headlineSmall),
                 const SizedBox(height: 20),
                 TextFormField(
                   controller: _nameController,

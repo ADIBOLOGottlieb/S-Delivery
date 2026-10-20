@@ -1,8 +1,6 @@
-# VOOM Delivery
+# S-Delivery
 
-Application de livraison à Lomé (Togo) : le client demande une livraison d'un **point A** (récupération du colis) à un **point B** (destination), paie par **Flooz** ou **Mixx by Yas** sur le compte marchand de l'agence et envoie la **capture d'écran** de la transaction. L'agence vérifie le paiement et assigne un **livreur**, qui suit la course sur la carte et ouvre l'itinéraire dans Google Maps.
-
-Le dépôt contient :
+Application de livraison de plis et colis à Lomé (Togo). Le client commande une course d'un **point A** (récupération) à un **point B** (destination), **paie directement dans l'app** (Flooz, Mixx by Yas ou carte bancaire), suit son **livreur en direct sur la carte**, lui **écrit** et donne au destinataire un **code de remise** à 4 chiffres. L'agence pilote tout depuis le panneau d'administration web.
 
 | Dossier | Contenu |
 |---|---|
@@ -13,66 +11,63 @@ Le dépôt contient :
 ## Fonctionnement
 
 ```
-Client                         Admin (web /admin)                 Livreur
-──────                         ──────────────────                 ───────
-1. Demande A → B (carte)
-   prix calculé (distance)
-2. Paie Flooz / Mixx
-   au numéro marchand ──▶ 3. Vérifie la capture et confirme
-   + capture d'écran          (ou valide un paiement en espèces)
-                            4. Assigne un livreur actif  ──▶ 5. Voit la livraison assignée
-                                                             carte A/B, itinéraire, appel
-                                                          6. « Colis récupéré » puis « Livré »
-7. Suit le statut en temps réel
+Client                               Admin (web /admin)                    Livreur
+──────                               ──────────────────                    ───────
+1. « Où livrer ? » : A → B sur la carte,
+   taille (pli, colis, gros colis),
+   maintenant ou programmée → prix
+2. Paie dans l'app (Flooz, Mixx, carte)
+   → confirmé automatiquement ─────▶ 3. Assigne un livreur actif ─────▶ 4. Voit la course : carte, itinéraire,
+   (repli : virement + capture                                              appel, discussion avec le client
+    vérifiée par l'agence)                                               5. Sa position est partagée pendant la course
+6. Suit le livreur en direct,                                            6. « Colis récupéré » puis « Colis remis »
+   discute avec lui                                                         avec le code donné par le destinataire
+7. Note le livreur (1 à 5 étoiles)
 ```
 
-- **Rôles** : `client` (inscription libre dans l'app), `livreur` (compte créé par l'admin uniquement), `admin` (panneau web).
-- **Accueil** : 3 services en ronds photo — Plis & Colis, Programmée, Courses alimentaires.
-- **Deux façons de commander** (bouton central « Livrer » ou rond Plis & Colis) :
-  - *formulaire* : A et B sur la carte, type, heure limite + photos des articles (6 max) ;
-  - *programmation par photo* (tuile sous les types de livraison, ouverte à tout client connecté, au même titre que le formulaire) : **une simple photo du colis suffit** (écran à gros boutons, pensé pour les commerçants qui lisent peu ; l'agence saisit quartier, numéro et montant total du colis) ; l'agence discute avec lui dans *Admin › Demandes* (texte, photos, positions partagées) puis **programme la livraison** (A/B sur une carte OpenStreetMap, prix auto ou convenu). Le client reçoit une notification et paie depuis la discussion. Les photos accompagnent la livraison jusqu'au livreur.
-- **Photo de profil** : client et livreur l'ajoutent / la changent depuis l'onglet Profil. Les photos (profil, articles, chat) sont stockées en base de données, elles survivent donc aux redémarrages de Render (disque éphémère).
-- **Marketplace** (« Courses alimentaires » dans l'app, sous-onglets Poissons et fruits de mer, Légumes, Céréales et conserves, Fruits, Viandes, Packs) : produits gérés par l'admin. Une commande crée une livraison dont le point A est l'adresse du vendeur ; le total = articles + frais de livraison.
-- **Tarif** : forfait + distance estimée × prix/km (+ supplément Express), minimum configurable, arrondi à 50 F. Réglable dans *Admin › Réglages*.
-- **Paiement** : Flooz et Mixx by Yas par virement au numéro marchand + capture d'écran vérifiée par l'admin (voir ci-dessous). Un livreur ne peut être assigné qu'après confirmation du paiement.
+- **Rôles** : `client` (inscription libre), `livreur` (créé par l'admin), `admin` (panneau web).
+- **Accueil** : barre « Où livrer ? », course en cours (progression en direct, messages non lus), services *Envoyer*, *Recevoir*, *Programmer*, *Par photo*, adresses récentes.
+- **Commande par photo** : une simple photo du colis suffit ; l'agence complète l'adresse avec le client dans la discussion puis programme la livraison.
+- **Discussion de la course** : client, livreur et agence échangent texte, photos et positions ; chaque message envoie une notification ; l'agence répond depuis la fiche de la livraison.
+- **Suivi en direct** : l'app du livreur envoie sa position (au plus toutes les 15 s, pendant une course seulement) ; le client la voit sur la carte tant qu'elle date de moins de 10 minutes.
+- **Code de remise** : 4 chiffres créés avec la course, visibles du client seul (il peut l'envoyer par SMS au destinataire) ; le livreur doit le saisir pour clôturer la course. L'agence le voit dans la fiche si le destinataire ne l'a pas.
+- **Note** : après la livraison, le client note le livreur (étoiles + commentaire), visible dans l'admin.
+- **Tarif** : forfait + distance estimée × prix/km, minimum configurable, arrondi à 50 F (*Admin › Réglages*).
 
-## Paiement Flooz / Mixx by Yas (sans agrégateur)
+## Paiement intégré
 
-Aucun intermédiaire ni commission : le client vire le montant sur le **numéro marchand** de l'agence puis envoie dans l'app la **capture d'écran** de la transaction (avec sa référence). L'admin vérifie la transaction sur le compte marchand et **confirme ou refuse** depuis la fiche de la livraison ; il peut aussi **valider directement** un paiement reçu autrement (espèces, virement vérifié). Un livreur ne peut être assigné qu'après confirmation.
+| Agrégateur | Moyens | Frais | Fonctionnement |
+|---|---|---|---|
+| **KKiaPay** (recommandé) | Flooz, Mixx by Yas, **carte bancaire** | 1,9 % payés par le client + abonnement | page de paiement sécurisée ouverte depuis l'app |
+| **PayGate Global** | Flooz, Mixx by Yas | 2,5 % / 3 % payés par l'agence | demande envoyée sur le téléphone, validée avec le code secret |
 
-Mise en service : *Admin › Réglages* › numéros marchands Flooz et/ou Mixx by Yas (au moins un), nom du compte et instructions éventuelles.
+Sécurité : chaque paiement est **revérifié côté serveur** auprès de l'agrégateur (les webhooks ne font que déclencher la vérification), le montant est contrôlé, une transaction ne paie qu'une livraison, une seconde demande est bloquée tant qu'un paiement est en cours, et la course ne peut pas être annulée pendant la validation.
 
-Contrôles : une même référence de transaction ne peut pas servir deux fois ; les captures sont privées (visibles uniquement par l'admin).
+Mise en service :
+1. Variables Render (ou `.env`) : `PAYMENT_GATEWAY=kkiapay` + `KKIAPAY_PUBLIC_KEY`, `KKIAPAY_PRIVATE_KEY`, `KKIAPAY_SECRET` (`KKIAPAY_SANDBOX=false` en production), ou `PAYMENT_GATEWAY=paygate` + `PAYGATE_AUTH_TOKEN`.
+2. Déclarer chez l'agrégateur l'URL de notification affichée dans *Admin › Réglages*.
+3. *Admin › Réglages › Mode de paiement* : **Automatique** (paiement dans l'app), **Manuel** (virement au numéro marchand + capture vérifiée par l'agence) ou **Simulation** (démonstration, aucun argent débité).
+
+Sans clés, l'app repasse automatiquement en mode manuel. L'admin peut toujours valider un paiement reçu autrement (espèces…) depuis la fiche d'une livraison.
 
 ## Identité visuelle
 
-Couleurs VOOM : jaune `#FFD700`, noir `#000000`, blanc. Le logo (moto stylisée formant « VOOM ») est dans :
+Design inspiré des apps de mobilité : fonds blancs, noir d'encre `#0A0A0A` pour l'action, gris neutres, un seul accent **lime `#C6FF3D`**, police **Inter** embarquée (`assets/fonts`). Le logo est un « S » tracé comme un itinéraire, avec un point de départ et un point d'arrivée.
 
 | Fichier | Usage |
 |---|---|
-| `assets/images/voom_logo.svg` | Logo affiché dans l'app (splash, connexion, espace livreur) |
-| `assets/images/voom_icon.png` (1024×1024) | Source des icônes Android / iOS |
-| `backend/public/images/voom-logo.svg`, `voom-icon.svg` | Panneau admin et favicon |
-
-Pour utiliser le fichier officiel de l'agence : remplacer ces fichiers (mêmes noms), puis régénérer les icônes avec `dart run flutter_launcher_icons`.
-
-## Marketplace, packs et promos (panneau admin)
-
-- **Sous-catégories** (*Marketplace › Sous-catégories*) : 6 onglets Agro créés au départ (Céréales & légumineuses, Légumes, Tubercules, Fruits, Œufs-volaille-poisson, Huiles & transformés), renommables, réordonnables ; affichés en **onglets verticaux** dans l'app.
-- **Packs** (*Marketplace › + Nouveau pack*) : plusieurs produits + quantités, un prix ; affichés avec le badge PACK et leur contenu.
-- **Promos** (*Promos*) : titre, message, image, produit lié, dates ; affichées en **bandeau défilant** sur l'accueil et envoyées en **notification push** à tous les clients (case à cocher ou bouton « Envoyer la notification »).
-- **Heure limite** : le client indique « à livrer avant » ; affichée au livreur avec compte à rebours et dans l'admin (« EN RETARD » si dépassée).
+| `lib/widgets/brand_logo.dart` | Logo vectoriel dans l'app (`SDeliveryMark`, `SDeliveryLogo`) |
+| `assets/images/s_delivery_icon.png` · `s_delivery_icon_foreground.png` | Sources des icônes (`dart run flutter_launcher_icons`) |
+| `backend/public/images/s-delivery-*.png` | Panneau admin, page de paiement, favicon |
 
 ## Notifications push (Firebase, gratuit sans carte bancaire)
 
-Rappels aux livreurs (nouvelle course, livraison Express, heure limite proche ou dépassée — toutes les 10 min) et promos aux clients.
+Suivi des courses et messages pour les clients, nouvelles courses et rappels (Express, heure limite) pour les livreurs.
 
-1. https://console.firebase.google.com › **Créer un projet** (plan Spark gratuit, aucune carte demandée).
+1. https://console.firebase.google.com › **Créer un projet** (plan Spark gratuit).
 2. **Ajouter une application Android**, nom de paquet `com.voomdelivery.app` › télécharger `google-services.json`.
-3. GitHub › Settings › Secrets › Actions :
-   - `GOOGLE_SERVICES_JSON` = contenu de `google-services.json` encodé en base64 (`base64 -w0 google-services.json`) ;
-   - `CRON_SECRET` = la valeur générée par Render pour `CRON_SECRET` (service › Environment).
-4. Firebase › Paramètres du projet › **Comptes de service** › « Générer une nouvelle clé privée » › encoder le JSON en base64 et le coller dans Render › `FIREBASE_CREDENTIALS`.
+3. GitHub › Settings › Secrets › Actions : `GOOGLE_SERVICES_JSON` (base64) et `CRON_SECRET` (même valeur que sur Render).
+4. Firebase › Comptes de service › « Générer une nouvelle clé privée » › JSON en base64 dans Render › `FIREBASE_CREDENTIALS`.
 5. Relancer le build de l'APK (Actions › Build APK › Run workflow).
 
 Sans ces réglages, l'application fonctionne normalement, sans notifications.
@@ -86,64 +81,56 @@ Prérequis : PHP 8.3+, Composer.
 ```bash
 cd backend
 composer install
-cp .env.example .env          # puis ajuster ADMIN_EMAIL / ADMIN_PASSWORD
+cp .env.example .env          # puis ajuster ADMIN_EMAIL / ADMIN_PASSWORD (et PAYMENT_GATEWAY)
 php artisan key:generate
 php artisan migrate --seed    # SQLite par défaut ; crée l'admin + données de démo
-php artisan storage:link
 php artisan serve --host=0.0.0.0 --port=8000
 ```
 
-- Panneau admin : http://localhost:8000/admin (identifiants `ADMIN_EMAIL` / `ADMIN_PASSWORD` du `.env`).
-- Comptes de démo (hors production) : client `client@voom.tg`, livreur `livreur@voom.tg`, mot de passe `password123`.
+- Panneau admin : http://localhost:8000/admin.
+- Comptes de démo (hors production) : client `client@sdelivery.tg`, livreur `livreur@sdelivery.tg`, mot de passe `password123`.
 - Tests : `php artisan test`.
 
 ### 2. Application Flutter
 
-Prérequis : Flutter 3.35+ ; sous Windows, activer le **Mode développeur** (requis pour les plugins).
+Prérequis : Flutter 3.35+ ; sous Windows, activer le **Mode développeur**.
 
-1. Cartes : **OpenStreetMap** (`flutter_map`) et adresses via **Nominatim** — gratuits, sans clé ni carte bancaire.
-   L'itinéraire du livreur ouvre l'application Google Maps du téléphone par un simple lien (gratuit, sans clé).
-2. Notifications push (facultatif) : voir « Notifications push » ci-dessus.
-3. Lancer :
-   ```bash
-   flutter pub get
-   # Émulateur Android (backend sur la machine hôte) :
-   flutter run
-   # Téléphone réel sur le même Wi-Fi :
-   flutter run --dart-define=API_BASE_URL=http://IP_DU_PC:8000/api/v1
-   ```
-   En build release, l'app utilise par défaut `https://voom-delivery-api.onrender.com/api/v1`.
+```bash
+flutter pub get
+flutter run                                                     # émulateur Android
+flutter run --dart-define=API_BASE_URL=http://IP_DU_PC:8000/api/v1   # téléphone sur le même Wi-Fi
+```
+
+Cartes **OpenStreetMap** (`flutter_map`) et adresses via **Nominatim**, sans clé. En release, l'app utilise `https://voom-delivery-api.onrender.com/api/v1`.
 
 Tests : `flutter test` · analyse : `flutter analyze`.
 
 ## Déploiement de l'API sur Render
 
-1. Render › **New** › **Blueprint** › choisir ce dépôt : `render.yaml` crée le service web **`voom-delivery-api`** (Docker, dossier `backend/`) et la base PostgreSQL **`voom-delivery-db`**.
-2. Renseigner les variables demandées : `ADMIN_EMAIL`, `ADMIN_PHONE`, `ADMIN_PASSWORD`.
-3. Au démarrage, le conteneur exécute les migrations et crée/met à jour le compte admin.
-4. URL de l'API : `https://voom-delivery-api.onrender.com/api/v1` · admin : `https://voom-delivery-api.onrender.com/admin`.
+1. Render › **New** › **Blueprint** › ce dépôt : `render.yaml` crée le service **`voom-delivery-api`** (Docker, `backend/`) et la base PostgreSQL.
+2. Renseigner `ADMIN_EMAIL`, `ADMIN_PHONE`, `ADMIN_PASSWORD` et les clés de paiement.
+3. Au démarrage, le conteneur exécute les migrations et crée le compte admin.
 
-> ⚠️ Plan gratuit : le disque est éphémère (les captures de paiement et photos produits sont perdues au redéploiement) et la base PostgreSQL gratuite expire après 30 jours. Pour la production, passer en plan payant et activer le disque prévu (commenté) dans `render.yaml`.
+> ⚠️ Plan gratuit : la base PostgreSQL gratuite expire après 30 jours. Pour la production, passer en plan payant.
 
 ## API (préfixe `/api/v1`, jeton `Authorization: Bearer …`)
 
 | Méthode | Route | Rôle | Description |
 |---|---|---|---|
-| POST | `/register` | public | Inscription client |
-| POST | `/login` | public | Connexion (`login` = email ou téléphone) |
+| POST | `/register` · `/login` | public | Inscription client · connexion (email ou téléphone) |
 | GET | `/me` · POST `/logout` | connecté | Profil · déconnexion |
-| GET | `/products?category=shopping\|agro` | connecté | Marketplace |
-| GET | `/payment-info` | connecté | Numéros marchands Flooz / Mixx |
+| GET | `/payment-info` | connecté | Paiement en ligne (`online`), numéros marchands, contact |
 | POST | `/deliveries/quote` | client | Estimation du prix |
-| GET/POST | `/deliveries` | client | Mes livraisons · nouvelle demande |
-| GET | `/deliveries/{id}` | client | Détail |
-| POST | `/deliveries/{id}/payment` | client | Preuve de paiement (multipart, `screenshot`) |
-| POST | `/deliveries/{id}/cancel` | client | Annulation (avant confirmation du paiement) |
-| POST | `/deliveries/{id}/photos` | client | Photo d'un article (multipart, `photo`) |
-| POST · DELETE | `/me/avatar` | connecté | Photo de profil (multipart, `photo`) · suppression |
-| GET · POST | `/requests` | client | Discussions · envoi rapide (`photos[]`, `message`) |
-| GET | `/requests/{id}` | client | Discussion + livraison programmée |
-| POST | `/requests/{id}/messages` | client | Message : `body`, `photo` ou `lat`/`lng` |
-| GET | `/courier/deliveries[?scope=history]` | livreur | Livraisons assignées |
-| GET | `/courier/deliveries/{id}` | livreur | Détail + coordonnées A/B |
-| POST | `/courier/deliveries/{id}/status` | livreur | `picked_up` puis `delivered` |
+| GET/POST | `/deliveries` | client | Mes livraisons · nouvelle course |
+| GET | `/deliveries/{id}` | client | Détail (code de remise, position du livreur, non-lus) |
+| POST | `/deliveries/{id}/checkout` | client | Paiement intégré (`method` flooz/mixx/card, `phone`) |
+| GET | `/deliveries/{id}/payments/{p}` | client | Statut du paiement (revérifié auprès de l'agrégateur) |
+| POST | `/deliveries/{id}/payment` | client | Paiement manuel : preuve (`screenshot`) |
+| POST | `/deliveries/{id}/cancel` · `/photos` · `/rating` | client | Annulation · photo d'article · note du livreur |
+| GET/POST | `/deliveries/{id}/messages` | client | Discussion de la course |
+| GET/POST | `/requests` · `/requests/{id}/messages` | client | Commande par photo et discussion avec l'agence |
+| GET | `/courier/deliveries[?scope=history]` · `/courier/deliveries/{id}` | livreur | Courses assignées |
+| POST | `/courier/deliveries/{id}/status` | livreur | `picked_up` puis `delivered` (+ `code` de remise) |
+| GET/POST | `/courier/deliveries/{id}/messages` | livreur | Discussion avec le client |
+| POST | `/courier/location` | livreur | Position pendant la course |
+| POST | `/webhooks/kkiapay` · `/webhooks/paygate` | agrégateur | Notifications (revérifiées) |

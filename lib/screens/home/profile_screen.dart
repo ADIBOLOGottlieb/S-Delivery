@@ -6,12 +6,14 @@ import '../../services/auth_service.dart';
 import '../../services/support_phone.dart';
 import '../../utils/colors.dart';
 import '../../utils/launchers.dart';
+import '../../widgets/brand_logo.dart';
 import '../../widgets/photos.dart';
+import '../../widgets/ui.dart';
 import '../../widgets/user_avatar.dart';
 import '../auth/login_screen.dart';
 import 'credentials_screen.dart';
 
-/// Profil (partagé par le client et le livreur).
+/// Compte (partagé par le client et le livreur).
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
@@ -25,7 +27,7 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _uploading = false;
 
-  /// Numéro de l'agence configuré par l'admin ; la carte « Contacter l'agence » est masquée sans lui.
+  /// Numéro de l'agence configuré par l'admin ; « Aide » est masquée sans lui.
   String? _supportPhone;
 
   @override
@@ -99,33 +101,61 @@ class _ProfileScreenState extends State<ProfileScreen> {
     messenger.showSnackBar(const SnackBar(content: Text('Votre compte a été supprimé.')));
   }
 
+  void _openCredentials() =>
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CredentialsScreen()));
+
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthService>().user;
     final textTheme = Theme.of(context).textTheme;
     final hasPhoto = user?.avatarUrl != null;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Profil'),
-        backgroundColor: AppColors.background,
-        foregroundColor: AppColors.textPrimary,
-      ),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + MediaQuery.paddingOf(context).bottom),
-        children: [
-          Container(
-            padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.8)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+    Widget quickTile(IconData icon, String label, VoidCallback? onTap) => Expanded(
+          child: Material(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(16),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Column(
+                  children: [
+                    Icon(icon),
+                    const SizedBox(height: 6),
+                    Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
+                  ],
+                ),
               ),
-              borderRadius: BorderRadius.circular(24),
             ),
-            child: Column(
+          ),
+        );
+
+    // Ouvert depuis l'espace livreur (écran poussé) : flèche retour ; dans l'onglet Compte : pas de barre.
+    final pushed = ModalRoute.of(context)?.canPop ?? false;
+    return Scaffold(
+      appBar: pushed ? AppBar() : null,
+      body: SafeArea(
+        top: !pushed,
+        child: ListView(
+          padding: EdgeInsets.fromLTRB(20, 16, 20, 24 + MediaQuery.paddingOf(context).bottom),
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(user?.name ?? 'Utilisateur', style: textTheme.headlineMedium),
+                      const SizedBox(height: 4),
+                      Text(
+                        [user?.roleLabel ?? 'Client', if (user?.vehicle != null) user!.vehicle!].join(' · '),
+                        style: textTheme.bodyMedium,
+                      ),
+                    ],
+                  ),
+                ),
                 // Photo de profil : un appui pour ajouter / changer / retirer.
                 Semantics(
                   button: true,
@@ -135,127 +165,79 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     child: Stack(
                       clipBehavior: Clip.none,
                       children: [
-                        Container(
-                          padding: const EdgeInsets.all(3),
-                          decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                          child: UserAvatar(user: user, radius: 48),
-                        ),
+                        UserAvatar(user: user, radius: 34),
                         if (_uploading)
                           const Positioned.fill(
                             child: CircleAvatar(
                               backgroundColor: Color(0x88000000),
-                              child: CircularProgressIndicator(color: AppColors.primary),
+                              child: CircularProgressIndicator(color: Colors.white),
                             ),
                           ),
                         Positioned(
                           right: -2,
                           bottom: -2,
                           child: Container(
-                            padding: const EdgeInsets.all(8),
+                            padding: const EdgeInsets.all(6),
                             decoration: BoxDecoration(
-                              color: AppColors.secondary,
+                              color: AppColors.ink,
                               shape: BoxShape.circle,
                               border: Border.all(color: Colors.white, width: 2),
                             ),
-                            child: const Icon(Icons.photo_camera, color: AppColors.primary, size: 18),
+                            child: const Icon(Icons.photo_camera_rounded, color: Colors.white, size: 14),
                           ),
                         ),
                       ],
                     ),
                   ),
                 ),
-                const SizedBox(height: 14),
-                Text(user?.name ?? 'Utilisateur',
-                    textAlign: TextAlign.center,
-                    style: textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 4),
-                Text(user?.phoneNumber ?? '', style: textTheme.bodyMedium?.copyWith(color: AppColors.onPrimary)),
-                if (user?.email != null)
-                  Text(user!.email!, style: textTheme.bodyMedium?.copyWith(color: AppColors.onPrimary)),
-                const SizedBox(height: 10),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(color: AppColors.secondary, borderRadius: BorderRadius.circular(12)),
-                  child: Text(
-                    (user?.roleLabel ?? 'Client').toUpperCase(),
-                    style: textTheme.bodySmall?.copyWith(color: AppColors.primary, fontWeight: FontWeight.bold),
-                  ),
-                ),
-                if (user?.vehicle != null) ...[
-                  const SizedBox(height: 8),
-                  Text(user!.vehicle!, style: textTheme.bodyMedium?.copyWith(color: AppColors.onPrimary)),
-                ],
               ],
             ),
-          ),
-          const SizedBox(height: 24),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.photo_camera_outlined),
-              title: Text(hasPhoto ? 'Changer la photo de profil' : 'Ajouter une photo de profil'),
-              trailing: const Icon(Icons.chevron_right),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                quickTile(Icons.support_agent_rounded, 'Aide', _supportPhone == null ? null : () => callPhone(context, _supportPhone!)),
+                const SizedBox(width: 10),
+                quickTile(Icons.key_outlined, 'Identifiants', _openCredentials),
+                const SizedBox(width: 10),
+                quickTile(Icons.privacy_tip_outlined, 'Confidentialité', _openPrivacy),
+              ],
+            ),
+            const SectionTitle('Compte'),
+            ListRow(
+              icon: Icons.phone_outlined,
+              title: user?.phoneNumber ?? '',
+              subtitle: user?.email ?? 'Numéro de connexion',
+              onTap: _openCredentials,
+            ),
+            ListRow(
+              icon: Icons.photo_camera_outlined,
+              title: hasPhoto ? 'Changer la photo de profil' : 'Ajouter une photo de profil',
+              subtitle: 'Aide le livreur et le client à vous reconnaître',
               onTap: _uploading ? null : _editPhoto,
             ),
-          ),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.key_outlined),
-              title: const Text('Mes identifiants'),
-              subtitle: const Text('Numéro, email, mot de passe'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CredentialsScreen())),
-            ),
-          ),
-          if (_supportPhone != null)
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.support_agent),
-                title: const Text("Contacter l'agence"),
-                subtitle: Text(_supportPhone!),
-                trailing: const Icon(Icons.call),
+            if (_supportPhone != null)
+              ListRow(
+                icon: Icons.call_outlined,
+                title: "Contacter l'agence",
+                subtitle: _supportPhone,
                 onTap: () => callPhone(context, _supportPhone!),
               ),
-            ),
-          Card(
-            child: Column(
-              children: [
-                const ListTile(
-                  leading: Icon(Icons.info_outline),
-                  title: Text('À propos'),
-                  subtitle: Text('VOOM Delivery · Lomé, Togo · v1.2.0'),
-                ),
-                const Divider(height: 1, indent: 16, endIndent: 16),
-                ListTile(
-                  leading: const Icon(Icons.privacy_tip_outlined),
-                  title: const Text('Politique de confidentialité'),
-                  trailing: const Icon(Icons.open_in_new, size: 20),
-                  onTap: _openPrivacy,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-          OutlinedButton.icon(
-            onPressed: _logout,
-            icon: const Icon(Icons.logout, color: AppColors.error),
-            label: const Text('Se déconnecter', style: TextStyle(color: AppColors.error)),
-            style: OutlinedButton.styleFrom(side: const BorderSide(color: AppColors.error)),
-          ),
-          const SizedBox(height: 32),
-          Card(
-            color: AppColors.error.withValues(alpha: 0.06),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: AppColors.error.withValues(alpha: 0.4)),
-            ),
-            child: ListTile(
-              leading: const Icon(Icons.delete_forever_outlined, color: AppColors.error),
-              title: const Text('Supprimer mon compte', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.w700)),
-              subtitle: const Text('Définitif : vos données personnelles sont effacées.'),
+            const SectionTitle('Application'),
+            ListRow(icon: Icons.privacy_tip_outlined, title: 'Politique de confidentialité', onTap: _openPrivacy),
+            ListRow(icon: Icons.logout_rounded, title: 'Se déconnecter', onTap: _logout),
+            ListRow(
+              icon: Icons.delete_outline_rounded,
+              title: 'Supprimer mon compte',
+              subtitle: 'Définitif : vos données personnelles sont effacées.',
+              color: AppColors.error,
               onTap: _deleteAccount,
             ),
-          ),
-        ],
+            const SizedBox(height: 32),
+            const Center(child: SDeliveryLogo(height: 26)),
+            const SizedBox(height: 8),
+            Center(child: Text('Lomé, Togo · v2.0.0', style: textTheme.bodySmall)),
+          ],
+        ),
       ),
     );
   }
@@ -345,7 +327,11 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
       actions: [
         TextButton(onPressed: _busy ? null : () => Navigator.pop(context, false), child: const Text('Annuler')),
         ElevatedButton(
-          style: ElevatedButton.styleFrom(backgroundColor: AppColors.error, foregroundColor: Colors.white),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.error,
+            foregroundColor: Colors.white,
+            minimumSize: const Size(0, 44),
+          ),
           onPressed: _busy ? null : _confirm,
           child: _busy
               ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))

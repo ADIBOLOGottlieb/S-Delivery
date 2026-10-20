@@ -25,7 +25,7 @@ Future<void> main() async {
   // Notifications push (ignorées si Firebase n'est pas configuré) ; un appui ouvre la livraison ou la discussion.
   PushService.onOpen = openFromNotification;
   unawaited(PushService.init());
-  runApp(VoomDeliveryApp(api: api));
+  runApp(SDeliveryApp(api: api));
 }
 
 /// Erreurs non rattrapées : journalisées au lieu de faire planter l'app ; en release, un petit message
@@ -56,11 +56,11 @@ void _installErrorHandlers() {
   }
 }
 
-class VoomDeliveryApp extends StatelessWidget {
+class SDeliveryApp extends StatelessWidget {
   final ApiClient api;
   final AuthService? authService;
 
-  const VoomDeliveryApp({super.key, required this.api, this.authService});
+  const SDeliveryApp({super.key, required this.api, this.authService});
 
   @override
   Widget build(BuildContext context) {
@@ -72,7 +72,7 @@ class VoomDeliveryApp extends StatelessWidget {
         ChangeNotifierProvider<AuthService>(create: (_) => authService ?? AuthService(api)),
       ],
       child: MaterialApp(
-        title: 'VOOM Delivery',
+        title: 'S-Delivery',
         theme: AppTheme.lightTheme,
         navigatorKey: appNavigatorKey,
         scaffoldMessengerKey: appMessengerKey,

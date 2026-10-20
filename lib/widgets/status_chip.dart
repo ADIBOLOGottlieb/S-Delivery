@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/delivery.dart';
 import '../utils/colors.dart';
 
+/// Pastille de statut : point de couleur + libellé, sur fond gris clair.
 class StatusChip extends StatelessWidget {
   final String label;
   final Color color;
@@ -13,7 +14,7 @@ class StatusChip extends StatelessWidget {
         label: d.statusLabel,
         color: switch (d.status) {
           DeliveryStatus.assigned => AppColors.info,
-          DeliveryStatus.pickedUp => Colors.indigo,
+          DeliveryStatus.pickedUp => AppColors.info,
           DeliveryStatus.delivered => AppColors.success,
           DeliveryStatus.cancelled => AppColors.error,
           _ => AppColors.textSecondary,
@@ -33,14 +34,15 @@ class StatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600),
+      padding: const EdgeInsets.fromLTRB(8, 4, 10, 4),
+      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(20)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(width: 7, height: 7, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          const SizedBox(width: 6),
+          Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.ink)),
+        ],
       ),
     );
   }

@@ -6,13 +6,13 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:voom_delivery_app/config/api_config.dart';
-import 'package:voom_delivery_app/models/product.dart';
-import 'package:voom_delivery_app/services/api_client.dart';
-import 'package:voom_delivery_app/services/auth_service.dart';
-import 'package:voom_delivery_app/services/paged_api.dart';
-import 'package:voom_delivery_app/services/support_phone.dart';
-import 'package:voom_delivery_app/widgets/paged_loader.dart';
+import 'package:s_delivery/config/api_config.dart';
+import 'package:s_delivery/models/payment.dart';
+import 'package:s_delivery/services/api_client.dart';
+import 'package:s_delivery/services/auth_service.dart';
+import 'package:s_delivery/services/paged_api.dart';
+import 'package:s_delivery/services/support_phone.dart';
+import 'package:s_delivery/widgets/paged_loader.dart';
 
 Map<String, dynamic> _userJson() => {
       'id': 1,
