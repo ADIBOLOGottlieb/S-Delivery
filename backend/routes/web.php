@@ -3,12 +3,10 @@
 use App\Http\Controllers\Admin\AuthController;
 use App\Http\Controllers\Admin\ClientAccountController;
 use App\Http\Controllers\Admin\DeliveryController;
-use App\Http\Controllers\Admin\ProductController;
-use App\Http\Controllers\Admin\PromotionController;
 use App\Http\Controllers\Admin\RequestController;
-use App\Http\Controllers\Admin\SubcategoryController;
 use App\Http\Controllers\Admin\SettingController;
 use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\CheckoutPageController;
 use App\Http\Controllers\LegalController;
 use App\Http\Controllers\MediaController;
 use Illuminate\Support\Facades\Route;
@@ -16,7 +14,7 @@ use Illuminate\Support\Facades\Route;
 // Identifiants de route numériques : « /admin/deliveries/abc » répond 404 au lieu d'une erreur SQL.
 Route::patterns([
     'delivery' => '[0-9]+', 'payment' => '[0-9]+', 'deliveryRequest' => '[0-9]+', 'courier' => '[0-9]+',
-    'client' => '[0-9]+', 'product' => '[0-9]+', 'promotion' => '[0-9]+', 'subcategory' => '[0-9]+',
+    'client' => '[0-9]+',
 ]);
 
 Route::redirect('/', '/admin');
@@ -28,6 +26,12 @@ Route::get('/compte/suppression', [LegalController::class, 'accountDeletion'])->
 // Images envoyées depuis l'app (profil, articles, chat), stockées en base.
 Route::get('/media/{uuid}', [MediaController::class, 'show'])->whereUuid('uuid')->name('media.show');
 
+// Page de paiement sécurisée ouverte depuis l'app (le jeton UUID du paiement sert de lien à usage unique).
+Route::middleware('throttle:30,1')->group(function () {
+    Route::get('/paiement/{token}', [CheckoutPageController::class, 'show'])->whereUuid('token')->name('checkout.show');
+    Route::get('/paiement/{token}/retour', [CheckoutPageController::class, 'return'])->whereUuid('token')->name('checkout.return');
+    Route::post('/paiement/{token}/simulation', [CheckoutPageController::class, 'simulate'])->whereUuid('token')->name('checkout.simulate');
+});
 
 Route::prefix('admin')->name('admin.')->group(function () {
     Route::middleware('guest')->group(function () {
@@ -44,6 +48,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/deliveries/{delivery}', [DeliveryController::class, 'show'])->name('deliveries.show');
         Route::post('/deliveries/{delivery}/assign', [DeliveryController::class, 'assign'])->name('deliveries.assign');
         Route::post('/deliveries/{delivery}/cancel', [DeliveryController::class, 'cancel'])->name('deliveries.cancel');
+        // Discussion de la course (client, livreur, agence).
+        Route::post('/deliveries/{delivery}/messages', [DeliveryController::class, 'message'])->name('deliveries.message');
 
         Route::post('/deliveries/{delivery}/confirm-payment', [DeliveryController::class, 'confirmPayment'])->name('deliveries.confirm-payment');
         Route::post('/payments/{payment}/approve', [DeliveryController::class, 'approvePayment'])->name('payments.approve');
@@ -72,16 +78,6 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/clients/credentials', [ClientAccountController::class, 'credentials'])->name('clients.credentials');
         Route::post('/clients/{client}/password', [ClientAccountController::class, 'resetPassword'])->name('clients.password');
         Route::post('/clients/{client}/toggle', [UserController::class, 'toggleClient'])->name('clients.toggle');
-
-        Route::resource('products', ProductController::class)->except('show');
-
-        Route::get('/subcategories', [SubcategoryController::class, 'index'])->name('subcategories.index');
-        Route::post('/subcategories', [SubcategoryController::class, 'store'])->name('subcategories.store');
-        Route::put('/subcategories', [SubcategoryController::class, 'update'])->name('subcategories.update');
-        Route::delete('/subcategories/{subcategory}', [SubcategoryController::class, 'destroy'])->name('subcategories.destroy');
-
-        Route::resource('promotions', PromotionController::class)->except('show');
-        Route::post('/promotions/{promotion}/push', [PromotionController::class, 'push'])->name('promotions.push');
 
         Route::get('/settings', [SettingController::class, 'edit'])->name('settings.edit');
         Route::put('/settings', [SettingController::class, 'update'])->name('settings.update');

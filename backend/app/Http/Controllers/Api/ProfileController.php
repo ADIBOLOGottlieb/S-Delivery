@@ -83,7 +83,7 @@ class ProfileController extends Controller
             }
         });
 
-        return response()->json(['message' => 'Votre compte a été supprimé. Merci d\'avoir utilisé VOOM Delivery.']);
+        return response()->json(['message' => 'Votre compte a été supprimé. Merci d\'avoir utilisé S-Delivery.']);
     }
 
     /** Livraison payée (ou en vérification) pas encore livrée, ou course en cours pour un livreur. */

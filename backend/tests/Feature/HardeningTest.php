@@ -6,13 +6,8 @@ use App\Models\Delivery;
 use App\Models\DeliveryRequest;
 use App\Models\Media;
 use App\Models\Payment;
-use App\Models\Product;
 use App\Models\Setting;
 use App\Models\User;
-use Database\Seeders\CatalogImageSeeder;
-use Database\Seeders\CatalogStructureSeeder;
-use Database\Seeders\FoodCatalogSeeder;
-use Database\Seeders\ProductCatalogSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -124,16 +119,11 @@ class HardeningTest extends TestCase
         $admin = User::factory()->admin()->create();
         $client = User::factory()->create(['name' => 'Afi Mensah', 'email' => 'afi@example.com']);
         $delivery = $this->deliveryWithPhoto($client);
-        Product::create([
-            'category' => 'agro', 'type' => 'product', 'name' => 'Tomate fraîche', 'price' => 500,
-            'pickup_address' => 'Marché', 'pickup_lat' => 6.13, 'pickup_lng' => 1.22, 'is_active' => true,
-        ]);
-
-        $this->getJson('/api/v1/products?search=TOMATE')->assertOk()->assertJsonPath('data.0.name', 'Tomate fraîche');
-        $this->getJson('/api/v1/products?search=50%25')->assertOk()->assertJsonCount(0, 'data');
 
         $this->app['auth']->forgetGuards();
         $this->actingAs($admin);
+        // % et _ saisis sont cherchés tels quels, pas comme jokers.
+        $this->get(route('admin.deliveries.index', ['search' => '50%']))->assertOk()->assertDontSee($delivery->reference);
         $this->get(route('admin.clients.index', ['search' => 'AFI MEN']))->assertOk()->assertSee('Afi Mensah');
         $this->get(route('admin.clients.index', ['search' => 'AFI@EXAMPLE']))->assertOk()->assertSee('Afi Mensah');
         $this->get(route('admin.deliveries.index', ['search' => strtolower($delivery->reference)]))
@@ -180,14 +170,14 @@ class HardeningTest extends TestCase
         Sanctum::actingAs($client);
         $this->getJson('/api/v1/deliveries/abc')->assertNotFound();
         $this->getJson('/api/v1/requests/1%20or%201=1')->assertNotFound();
-        $this->postJson('/api/v1/deliveries', $this->payload(['product_id' => 'abc', 'quantity' => 1]))
-            ->assertUnprocessable()->assertJsonPath('errors.product_id.0', "Ce produit n'est plus disponible.");
+        $this->getJson('/api/v1/deliveries/abc/messages')->assertNotFound();
+        $this->getJson('/api/v1/deliveries/1/payments/x')->assertNotFound();
 
         $this->app['auth']->forgetGuards();
         $admin = User::factory()->admin()->create();
         $delivery = $this->makeDelivery($client);
         $this->actingAs($admin)->get('/admin/deliveries/abc')->assertNotFound();
-        $this->get('/admin/products/x/edit')->assertNotFound();
+        $this->get('/paiement/pas-un-uuid')->assertNotFound();
         $this->post(route('admin.deliveries.assign', $delivery), ['courier_id' => 'abc'])->assertSessionHasErrors('courier_id');
     }
 
@@ -341,22 +331,6 @@ class HardeningTest extends TestCase
             ->assertJsonPath('account_deletion_url', url('/compte/suppression'))
             ->assertJsonPath('support_email', 'contact@voom.tg');
         $this->assertStringStartsWith('http', $this->getJson('/api/v1/payment-info')->json('privacy_url'));
-    }
-
-    // --- 8. Photos du catalogue posées une seule fois --------------------------------
-
-    public function test_catalog_images_are_seeded_once_and_removed_photos_stay_removed(): void
-    {
-        $this->seed(ProductCatalogSeeder::class);
-        $this->seed(CatalogStructureSeeder::class);
-        $this->seed(FoodCatalogSeeder::class);
-        $this->seed(CatalogImageSeeder::class);
-        $this->assertSame('catalog/mangue.jpg', Product::where('name', 'Mangue')->value('image_path'));
-
-        // L'admin retire la photo : le redéploiement suivant ne la remet pas.
-        Product::where('name', 'Mangue')->update(['image_path' => null]);
-        $this->seed(CatalogImageSeeder::class);
-        $this->assertNull(Product::where('name', 'Mangue')->value('image_path'));
     }
 
     public function test_admin_seeding_never_promotes_a_client_nor_resets_the_password(): void

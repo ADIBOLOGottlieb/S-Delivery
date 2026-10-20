@@ -14,7 +14,7 @@
                 <label class="block text-sm font-medium mb-1">Fichier CSV</label>
                 <input type="file" name="file" accept=".csv,.txt,text/csv" required class="w-full border rounded px-3 py-2">
             </div>
-            <button class="bg-black text-voom font-semibold rounded px-6 py-2">Importer</button>
+            <button class="bg-black text-brand font-semibold rounded px-6 py-2">Importer</button>
             <p class="text-xs text-gray-500">
                 Chaque client reçoit un mot de passe de 8 chiffres.
                 Les numéros déjà inscrits ou en double sont ignorés (rien n'est écrasé).

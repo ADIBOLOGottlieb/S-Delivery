@@ -11,6 +11,8 @@ use App\Models\Payment;
 use App\Models\User;
 use App\Services\DeliveryReminder;
 use App\Services\Payments\PaymentService;
+use App\Services\PushNotifier;
+use Illuminate\Support\Str;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -69,9 +71,10 @@ class DeliveryController extends Controller
         return view('admin.deliveries.index', compact('deliveries', 'filters'));
     }
 
-    public function show(Delivery $delivery): View
+    public function show(Request $request, Delivery $delivery): View
     {
-        $delivery->load(['client', 'courier', 'product', 'payments.reviewer', 'photos', 'deliveryRequest']);
+        $delivery->load(['client', 'courier', 'payments.reviewer', 'photos', 'deliveryRequest', 'messages.sender', 'messages.media']);
+        $delivery->markReadBy($request->user());
 
         $couriers = User::couriers()
             ->where('is_active', true)
@@ -100,6 +103,23 @@ class DeliveryController extends Controller
         }
 
         return back()->with('success', 'Livreur assigné.');
+    }
+
+    /** Réponse de l'agence dans la discussion de la course (prévient le client et le livreur). */
+    public function message(Request $request, Delivery $delivery, PushNotifier $push): RedirectResponse
+    {
+        $data = $request->validate(['body' => ['required', 'string', 'max:2000']]);
+
+        $delivery->post($request->user(), ['body' => trim($data['body'])]);
+        $delivery->loadMissing(['client', 'courier']);
+        foreach (array_filter([$delivery->client, $delivery->courier]) as $recipient) {
+            rescue(fn () => $push->toUser($recipient, 'S-Delivery · '.$delivery->reference, Str::limit($data['body'], 120), [
+                'type' => 'delivery_chat',
+                'delivery_id' => (string) $delivery->id,
+            ]), report: false);
+        }
+
+        return back()->with('success', 'Message envoyé.');
     }
 
     /** Validation du paiement par l'admin (espèces, virement vérifié manuellement, test). */

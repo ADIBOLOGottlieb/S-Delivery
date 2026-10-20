@@ -41,7 +41,7 @@
                         </div>
                     @else
                         <div class="flex {{ $fromClient ? 'justify-start' : 'justify-end' }}">
-                            <div class="max-w-[75%] rounded-2xl px-3 py-2 shadow-sm {{ $fromClient ? 'bg-white rounded-tl-sm' : 'bg-voom rounded-tr-sm' }}">
+                            <div class="max-w-[75%] rounded-2xl px-3 py-2 shadow-sm {{ $fromClient ? 'bg-white rounded-tl-sm' : 'bg-brand rounded-tr-sm' }}">
                                 @if ($m->media)
                                     <a href="{{ $m->media->url() }}" target="_blank">
                                         <img src="{{ $m->media->url() }}" alt="Photo" class="rounded-lg max-h-64 object-cover">
@@ -52,8 +52,8 @@
                                         📍 <a class="underline" target="_blank" href="https://www.google.com/maps/search/?api=1&query={{ $m->lat }},{{ $m->lng }}">Position partagée</a>
                                         @if ($canSchedule)
                                             <span class="ml-2 whitespace-nowrap">
-                                                <button type="button" class="text-xs bg-green-600 text-white rounded px-2 py-0.5" onclick="voomSetPoint('pickup', {{ $m->lat }}, {{ $m->lng }})">→ A</button>
-                                                <button type="button" class="text-xs bg-red-600 text-white rounded px-2 py-0.5" onclick="voomSetPoint('dropoff', {{ $m->lat }}, {{ $m->lng }})">→ B</button>
+                                                <button type="button" class="text-xs bg-green-600 text-white rounded px-2 py-0.5" onclick="sdSetPoint('pickup', {{ $m->lat }}, {{ $m->lng }})">→ A</button>
+                                                <button type="button" class="text-xs bg-red-600 text-white rounded px-2 py-0.5" onclick="sdSetPoint('dropoff', {{ $m->lat }}, {{ $m->lng }})">→ B</button>
                                             </span>
                                         @endif
                                     </div>
@@ -79,7 +79,7 @@
                 <textarea name="body" rows="2" placeholder="Votre message… (prix, heure de passage, question)"
                           class="flex-1 border rounded-lg px-3 py-2 resize-none"
                           onkeydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.form.submit(); }"></textarea>
-                <button class="bg-black text-voom font-semibold rounded-lg px-4 py-2">Envoyer</button>
+                <button class="bg-black text-brand font-semibold rounded-lg px-4 py-2">Envoyer</button>
             </form>
         </section>
 
@@ -131,8 +131,8 @@
                                 <legend class="px-1 font-semibold {{ $color }}">{{ $title }}</legend>
                                 <div class="flex gap-2">
                                     <input id="{{ $key }}-search" placeholder="Chercher (quartier, repère…)" class="flex-1 border rounded px-3 py-2"
-                                           onkeydown="if (event.key === 'Enter') { event.preventDefault(); voomSearch('{{ $key }}'); }">
-                                    <button type="button" class="border rounded px-3" onclick="voomSearch('{{ $key }}')">🔍</button>
+                                           onkeydown="if (event.key === 'Enter') { event.preventDefault(); sdSearch('{{ $key }}'); }">
+                                    <button type="button" class="border rounded px-3" onclick="sdSearch('{{ $key }}')">🔍</button>
                                 </div>
                                 <div id="{{ $key }}-map" class="h-44 rounded border"></div>
                                 <input name="{{ $key }}_address" id="{{ $key }}-address" required value="{{ old($key.'_address', $addr) }}"
@@ -170,7 +170,7 @@
                                 <input type="number" name="delivery_fee" min="0" step="50" value="{{ old('delivery_fee') }}" placeholder="Auto (distance)" class="w-full border rounded px-3 py-2">
                             </div>
                         </div>
-                        <button class="w-full bg-black text-voom font-semibold rounded-lg py-3">Programmer et prévenir le client</button>
+                        <button class="w-full bg-black text-brand font-semibold rounded-lg py-3">Programmer et prévenir le client</button>
                     </form>
                 </section>
             @endif
@@ -206,7 +206,7 @@
         const markers = {};
         const short = name => name.split(',').slice(0, 3).join(',');
 
-        function voomSetPoint(key, lat, lng, label) {
+        function sdSetPoint(key, lat, lng, label) {
             document.getElementById(key + '-lat').value = (+lat).toFixed(7);
             document.getElementById(key + '-lng').value = (+lng).toFixed(7);
             document.getElementById('schedule-form')?.setAttribute('data-touched', '1');
@@ -225,14 +225,14 @@
             }
         }
 
-        function voomSearch(key) {
+        function sdSearch(key) {
             const q = document.getElementById(key + '-search').value.trim();
             if (!q) return;
             fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=tg&accept-language=fr&q=${encodeURIComponent(q)}`)
                 .then(r => r.json())
                 .then(results => {
                     if (!results.length) return alert('Adresse introuvable : cliquez directement sur la carte.');
-                    voomSetPoint(key, results[0].lat, results[0].lon, short(results[0].display_name));
+                    sdSetPoint(key, results[0].lat, results[0].lon, short(results[0].display_name));
                 })
                 .catch(() => alert('Recherche indisponible : cliquez sur la carte.'));
         }
@@ -243,10 +243,10 @@
             const map = L.map(el).setView(LOME, 13);
             L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
             maps[key] = map;
-            map.on('click', e => voomSetPoint(key, e.latlng.lat, e.latlng.lng));
+            map.on('click', e => sdSetPoint(key, e.latlng.lat, e.latlng.lng));
             const lat = document.getElementById(key + '-lat').value;
             const lng = document.getElementById(key + '-lng').value;
-            if (lat && lng) voomSetPoint(key, lat, lng, document.getElementById(key + '-address').value || undefined);
+            if (lat && lng) sdSetPoint(key, lat, lng, document.getElementById(key + '-address').value || undefined);
         });
         if (document.getElementById('schedule-form')) document.getElementById('schedule-form').dataset.touched = '';
 

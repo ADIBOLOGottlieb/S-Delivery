@@ -13,7 +13,7 @@
             </p>
         </div>
         @if (count($credentials) > 0)
-            <button type="button" onclick="downloadCredentials()" class="bg-black text-voom font-semibold rounded px-4 py-2">
+            <button type="button" onclick="downloadCredentials()" class="bg-black text-brand font-semibold rounded px-4 py-2">
                 Télécharger la liste (CSV)
             </button>
         @endif
@@ -69,7 +69,7 @@
             const csv = ['Nom;Identifiant;Mot de passe', ...rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';'))].join('\r\n');
             const link = document.createElement('a');
             link.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
-            link.download = 'identifiants-clients-voom.csv';
+            link.download = 'identifiants-clients-sdelivery.csv';
             link.click();
         }
     </script>

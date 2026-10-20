@@ -29,7 +29,7 @@
                 @endforeach
             </select>
         </div>
-        <button class="bg-black text-voom rounded px-4 py-2 font-semibold">Filtrer</button>
+        <button class="bg-black text-brand rounded px-4 py-2 font-semibold">Filtrer</button>
         <a href="{{ route('admin.deliveries.index') }}" class="text-sm text-gray-500 py-2">Réinitialiser</a>
     </form>
 

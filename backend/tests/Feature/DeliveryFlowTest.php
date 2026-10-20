@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Models\Delivery;
 use App\Models\Payment;
-use App\Models\Product;
 use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -121,8 +120,17 @@ class DeliveryFlowTest extends TestCase
         $this->postJson("/api/v1/courier/deliveries/{$id}/status", ['status' => 'delivered'])
             ->assertUnprocessable();
         $this->postJson("/api/v1/courier/deliveries/{$id}/status", ['status' => 'picked_up'])
-            ->assertOk()->assertJsonPath('data.status', 'picked_up');
+            ->assertOk()->assertJsonPath('data.status', 'picked_up')
+            // Le livreur ne voit jamais le code : il doit le demander au destinataire.
+            ->assertJsonPath('data.dropoff_code', null)
+            ->assertJsonPath('data.requires_code', true);
+
+        $code = $delivery->refresh()->dropoff_code;
         $this->postJson("/api/v1/courier/deliveries/{$id}/status", ['status' => 'delivered'])
+            ->assertUnprocessable()->assertJsonValidationErrors('code');
+        $this->postJson("/api/v1/courier/deliveries/{$id}/status", ['status' => 'delivered', 'code' => $code === '0000' ? '1111' : '0000'])
+            ->assertUnprocessable()->assertJsonValidationErrors('code');
+        $this->postJson("/api/v1/courier/deliveries/{$id}/status", ['status' => 'delivered', 'code' => $code])
             ->assertOk()->assertJsonPath('data.status', 'delivered');
 
         $this->getJson('/api/v1/courier/deliveries?scope=history')->assertJsonCount(1, 'data');
@@ -151,24 +159,27 @@ class DeliveryFlowTest extends TestCase
         $this->actingAs($owner)->get('/admin')->assertForbidden();
     }
 
-    public function test_marketplace_order_uses_vendor_location_and_adds_items_amount(): void
+    public function test_marketplace_is_gone_and_pickup_is_always_required(): void
     {
-        $product = Product::create([
-            'category' => 'agro', 'name' => 'Tomates', 'price' => 800, 'unit' => 'kg',
-            'pickup_address' => 'Marché', 'pickup_lat' => 6.13, 'pickup_lng' => 1.22, 'is_active' => true,
-        ]);
-
         Sanctum::actingAs(User::factory()->create());
-        $this->getJson('/api/v1/products?category=agro')->assertJsonCount(1, 'data');
 
-        $payload = $this->deliveryPayload(['product_id' => $product->id, 'quantity' => 3]);
+        $this->getJson('/api/v1/products')->assertNotFound();
+        $this->getJson('/api/v1/promotions')->assertNotFound();
+
+        $payload = $this->deliveryPayload();
         unset($payload['pickup_address'], $payload['pickup_lat'], $payload['pickup_lng']);
+        $this->postJson('/api/v1/deliveries', $payload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['pickup_address', 'pickup_lat', 'pickup_lng']);
 
-        $response = $this->postJson('/api/v1/deliveries', $payload)->assertCreated();
-
-        $response->assertJsonPath('data.items_amount', 2400)
-            ->assertJsonPath('data.pickup.address', 'Marché');
-        $this->assertSame(2400 + $response->json('data.delivery_fee'), $response->json('data.total_amount'));
+        // Nouvelle référence S-Delivery et code de remise à 4 chiffres, visible du client.
+        $this->postJson('/api/v1/deliveries', $this->deliveryPayload())
+            ->assertCreated()
+            ->assertJsonPath('data.items_amount', 0)
+            ->assertJson(fn ($json) => $json
+                ->where('data.reference', fn ($ref) => str_starts_with($ref, 'SD-'))
+                ->where('data.dropoff_code', fn ($code) => preg_match('/^\d{4}$/', $code) === 1)
+                ->etc());
     }
 
     public function test_admin_pages_render(): void
@@ -193,13 +204,15 @@ class DeliveryFlowTest extends TestCase
 
         $this->actingAs($admin);
         foreach (['admin.dashboard', 'admin.deliveries.index', 'admin.couriers.index', 'admin.couriers.create',
-            'admin.clients.index', 'admin.products.index', 'admin.products.create', 'admin.settings.edit'] as $route) {
-            $this->get(route($route))->assertOk();
+            'admin.clients.index', 'admin.requests.index', 'admin.settings.edit'] as $route) {
+            $this->get(route($route))->assertOk()->assertDontSee('Courses alimentaires');
         }
-        $this->get(route('admin.deliveries.show', $id))->assertOk()->assertSee('Confirmer le paiement');
+        $this->get(route('admin.deliveries.show', $id))->assertOk()
+            ->assertSee('Confirmer le paiement')
+            ->assertSee('Code de remise')
+            ->assertSee('Discussion');
         $this->get(route('admin.payments.screenshot', Payment::firstOrFail()))->assertOk();
         $this->get(route('admin.couriers.edit', User::where('role', 'livreur')->first()))->assertOk();
-        $this->get(route('admin.products.edit', Product::first()))->assertOk();
     }
 
     public function test_payment_of_cancelled_delivery_cannot_be_approved(): void

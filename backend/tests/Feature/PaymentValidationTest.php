@@ -4,10 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\Delivery;
 use App\Models\Payment;
-use App\Models\Product;
 use App\Models\Setting;
 use App\Models\User;
-use Database\Seeders\ProductCatalogSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -71,43 +69,44 @@ class PaymentValidationTest extends TestCase
             ->assertJsonMissingPath('mode');
     }
 
-    public function test_aggregator_routes_are_gone(): void
+    public function test_without_gateway_keys_the_app_falls_back_to_manual_payment(): void
+    {
+        config(['payments.gateway' => 'kkiapay', 'payments.kkiapay.public_key' => null]);
+        $client = User::factory()->create();
+        $d = $this->delivery($client);
+        Sanctum::actingAs($client);
+
+        $this->getJson('/api/v1/payment-info')->assertOk()->assertJsonPath('online.enabled', false);
+        $this->postJson("/api/v1/deliveries/{$d->id}/checkout", ['method' => 'flooz', 'phone' => '99000000'])
+            ->assertUnprocessable()->assertJsonValidationErrors('payment');
+    }
+
+    public function test_admin_settings_show_payment_mode_and_merchant_numbers(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin)->get(route('admin.settings.edit'))->assertOk()
+            ->assertSee('Paiement intégré')
+            ->assertSee('Mode de paiement')
+            ->assertSee(route('webhooks.kkiapay'));
+
+        $this->actingAs($admin)->put(route('admin.settings.update'), [
+            'merchant_name' => 'S-Delivery', 'flooz_merchant_number' => '99112233', 'payment_mode' => 'manual',
+            'base_fee' => 500, 'per_km_fee' => 150, 'express_fee' => 1000, 'min_fee' => 1000,
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame('99112233', Setting::get('flooz_merchant_number'));
+        $this->assertSame('manual', Setting::get('payment_mode'));
+    }
+
+    public function test_card_cannot_be_paid_by_screenshot(): void
     {
         $client = User::factory()->create();
         $d = $this->delivery($client);
         Sanctum::actingAs($client);
 
-        $this->postJson("/api/v1/deliveries/{$d->id}/checkout", ['method' => 'flooz', 'phone' => '99000000'])->assertNotFound();
-        $this->postJson('/api/v1/webhooks/kkiapay')->assertNotFound();
-    }
-
-    public function test_admin_settings_have_merchant_numbers_but_no_aggregator(): void
-    {
-        $admin = User::factory()->admin()->create();
-        $this->actingAs($admin)->get(route('admin.settings.edit'))->assertOk()
-            ->assertSee('Paiement Flooz / Mixx by Yas')
-            ->assertDontSee('KKiaPay')
-            ->assertDontSee('Simulation');
-
-        $this->actingAs($admin)->put(route('admin.settings.update'), [
-            'merchant_name' => 'VOOM Delivery', 'flooz_merchant_number' => '99112233', 'base_fee' => 500,
-            'per_km_fee' => 150, 'express_fee' => 1000, 'min_fee' => 1000,
-        ])->assertSessionHasNoErrors();
-
-        $this->assertSame('99112233', Setting::get('flooz_merchant_number'));
-    }
-
-    public function test_catalog_is_seeded_once_with_food_products_only(): void
-    {
-        $this->seed(ProductCatalogSeeder::class);
-
-        $this->assertSame(0, Product::where('category', 'shopping')->count());
-        $this->assertGreaterThanOrEqual(35, Product::where('category', 'agro')->count());
-        $this->assertTrue(Product::where('name', 'Maïs jaune (grain)')->exists());
-
-        // L'admin supprime un produit : il ne réapparaît pas au prochain déploiement.
-        Product::where('name', 'Maïs jaune (grain)')->delete();
-        $this->seed(ProductCatalogSeeder::class);
-        $this->assertFalse(Product::where('name', 'Maïs jaune (grain)')->exists());
+        $this->post("/api/v1/deliveries/{$d->id}/payment", [
+            'method' => 'card', 'transaction_ref' => 'CB1', 'payer_phone' => '+22899000000',
+            'screenshot' => \Illuminate\Http\UploadedFile::fake()->image('c.jpg'),
+        ], ['Accept' => 'application/json'])->assertUnprocessable()->assertJsonValidationErrors('method');
     }
 }

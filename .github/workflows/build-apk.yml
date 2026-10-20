@@ -86,29 +86,29 @@ jobs:
 
       - name: Renommer les fichiers
         run: |
-          cp build/app/outputs/flutter-apk/app-release.apk voom-delivery.apk
-          cp build/app/outputs/bundle/release/app-release.aab voom-delivery.aab
+          cp build/app/outputs/flutter-apk/app-release.apk s-delivery.apk
+          cp build/app/outputs/bundle/release/app-release.aab s-delivery.aab
 
       - uses: actions/upload-artifact@v7
         with:
-          name: voom-delivery-android
+          name: s-delivery-android
           path: |
-            voom-delivery.apk
-            voom-delivery.aab
+            s-delivery.apk
+            s-delivery.aab
 
       - name: Publier la release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: build-${{ github.run_number }}
-          name: VOOM Delivery – build ${{ github.run_number }}
+          name: S-Delivery – build ${{ github.run_number }}
           body: |
-            Android de VOOM Delivery (commit ${{ github.sha }}).
-            - voom-delivery.apk : installation directe sur le téléphone.
-            - voom-delivery.aab : à envoyer sur la Google Play Console.
+            Android de S-Delivery (commit ${{ github.sha }}).
+            - s-delivery.apk : installation directe sur le téléphone.
+            - s-delivery.aab : à envoyer sur la Google Play Console.
             API : https://voom-delivery-api.onrender.com/api/v1
           files: |
-            voom-delivery.apk
-            voom-delivery.aab
+            s-delivery.apk
+            s-delivery.aab
           make_latest: true
 
       - name: Nettoyage des secrets

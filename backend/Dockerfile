@@ -1,4 +1,4 @@
-# Image de production de l'API VOOM Delivery (Render, runtime Docker).
+# Image de production de l'API S-Delivery (Render, runtime Docker).
 FROM php:8.4-apache
 
 # gd (JPEG / PNG / WebP) : réduction des photos à l'envoi ; exif : sens des photos de téléphone.
@@ -14,7 +14,7 @@ RUN apt-get update \
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
 RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf \
     && sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf \
-    && printf 'upload_max_filesize=8M\npost_max_size=40M\nmax_file_uploads=10\nmemory_limit=256M\nexpose_php=Off\n' > /usr/local/etc/php/conf.d/voom.ini \
+    && printf 'upload_max_filesize=8M\npost_max_size=40M\nmax_file_uploads=10\nmemory_limit=256M\nexpose_php=Off\n' > /usr/local/etc/php/conf.d/sdelivery.ini \
     && cp /usr/local/etc/php/php.ini-production /usr/local/etc/php/php.ini
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer

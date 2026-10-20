@@ -151,7 +151,7 @@ class ClientAccountController extends Controller
 
         $apkUrl = config('services.apk.url');
         $credentials = array_map(function (array $c) use ($apkUrl) {
-            $message = "Bonjour {$c['name']}, votre compte VOOM Delivery est prêt.\n"
+            $message = "Bonjour {$c['name']}, votre compte S-Delivery est prêt.\n"
                 ."Téléchargez l'application : $apkUrl\n"
                 ."Identifiant : {$c['phone']}\nMot de passe : {$c['password']}\n"
                 .'Vous pourrez le changer dans Profil › Mes identifiants.';

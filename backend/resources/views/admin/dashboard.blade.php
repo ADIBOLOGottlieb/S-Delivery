@@ -8,7 +8,7 @@
     @php
         $cards = [
             ['Paiements à vérifier', $paymentsToReview, route('admin.deliveries.index', ['payment_status' => 'submitted']), 'border-orange-400'],
-            ['Livraisons à assigner', $toAssign, route('admin.deliveries.index', ['status' => 'pending', 'payment_status' => 'verified']), 'border-voom'],
+            ['Livraisons à assigner', $toAssign, route('admin.deliveries.index', ['status' => 'pending', 'payment_status' => 'verified']), 'border-brand'],
             ['En cours', $inProgress, route('admin.deliveries.index', ['status' => 'assigned']), 'border-blue-400'],
             ['Livrées aujourd\'hui', $deliveredToday, route('admin.deliveries.index', ['status' => 'delivered']), 'border-green-500'],
             ['Livreurs actifs', $activeCouriers, route('admin.couriers.index'), 'border-gray-400'],

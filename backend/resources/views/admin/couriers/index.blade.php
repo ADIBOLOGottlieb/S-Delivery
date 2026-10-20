@@ -5,7 +5,7 @@
 @section('content')
     <div class="flex items-center justify-between mb-4">
         <h1 class="text-2xl font-bold">Livreurs</h1>
-        <a href="{{ route('admin.couriers.create') }}" class="bg-black text-voom font-semibold rounded px-4 py-2">+ Nouveau livreur</a>
+        <a href="{{ route('admin.couriers.create') }}" class="bg-black text-brand font-semibold rounded px-4 py-2">+ Nouveau livreur</a>
     </div>
 
     <div class="bg-white rounded-lg shadow-sm overflow-x-auto">

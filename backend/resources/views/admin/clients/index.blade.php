@@ -11,7 +11,7 @@
                 <button class="border border-black rounded px-4 py-2 font-semibold">Rechercher</button>
             </form>
             <a href="{{ route('admin.clients.import') }}" class="border border-black bg-white rounded px-4 py-2 font-semibold">Importer (CSV)</a>
-            <a href="{{ route('admin.clients.create') }}" class="bg-black text-voom rounded px-4 py-2 font-semibold">+ Ajouter un client</a>
+            <a href="{{ route('admin.clients.create') }}" class="bg-black text-brand rounded px-4 py-2 font-semibold">+ Ajouter un client</a>
         </div>
     </div>
 
@@ -35,7 +35,7 @@
                             @if ($client->avatar)
                                 <img src="{{ $client->avatar->url() }}" alt="" class="w-8 h-8 rounded-full object-cover">
                             @else
-                                <span class="w-8 h-8 rounded-full bg-black text-voom flex items-center justify-center text-xs font-bold">{{ mb_strtoupper(mb_substr($client->name, 0, 1)) }}</span>
+                                <span class="w-8 h-8 rounded-full bg-black text-brand flex items-center justify-center text-xs font-bold">{{ mb_strtoupper(mb_substr($client->name, 0, 1)) }}</span>
                             @endif
                             {{ $client->name }}
                         </div>

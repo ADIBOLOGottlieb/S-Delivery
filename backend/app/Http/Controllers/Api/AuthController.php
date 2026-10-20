@@ -46,7 +46,7 @@ class AuthController extends Controller
         $data['phone_number'] = Phone::normalize($data['phone_number']);
         if (User::whereIn('phone_number', Phone::variants($data['phone_number']))->exists()) {
             throw ValidationException::withMessages([
-                'phone_number' => "Ce numéro a déjà un compte VOOM. Connectez-vous avec l'identifiant reçu de l'agence.",
+                'phone_number' => "Ce numéro a déjà un compte S-Delivery. Connectez-vous avec l'identifiant reçu de l'agence.",
             ]);
         }
 

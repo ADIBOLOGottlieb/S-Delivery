@@ -30,6 +30,6 @@
                 <input name="email" type="email" value="{{ old('email') }}" class="w-full border rounded px-3 py-2">
             </div>
         </div>
-        <button class="bg-black text-voom font-semibold rounded px-6 py-2">Créer le compte</button>
+        <button class="bg-black text-brand font-semibold rounded px-6 py-2">Créer le compte</button>
     </form>
 @endsection

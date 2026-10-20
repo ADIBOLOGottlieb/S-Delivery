@@ -40,7 +40,7 @@ return [
 
     // Lien de téléchargement de l'app, envoyé aux clients avec leurs identifiants.
     'apk' => [
-        'url' => env('APK_URL', 'https://github.com/ADIBOLOGottlieb/voom-delivery-app/releases/latest/download/voom-delivery.apk'),
+        'url' => env('APK_URL', 'https://github.com/ADIBOLOGottlieb/S-Delivery/releases/latest/download/s-delivery.apk'),
     ],
 
     'slack' => [

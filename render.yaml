@@ -64,6 +64,23 @@ services:
         sync: false
       - key: ADMIN_PASSWORD_RESET
         value: "false"
+      # Paiement intégré : kkiapay (Flooz, Mixx, carte · recommandé) | paygate | manual
+      # Sans clés renseignées, l'app repasse automatiquement en mode manuel (capture d'écran).
+      - key: PAYMENT_GATEWAY
+        value: kkiapay
+      - key: KKIAPAY_PUBLIC_KEY
+        sync: false
+      - key: KKIAPAY_PRIVATE_KEY
+        sync: false
+      - key: KKIAPAY_SECRET
+        sync: false
+      - key: KKIAPAY_WEBHOOK_SECRET
+        sync: false
+      # true = clés de test ; passer à false avec les clés de production
+      - key: KKIAPAY_SANDBOX
+        value: "true"
+      - key: PAYGATE_AUTH_TOKEN
+        sync: false
       # Notifications push : JSON du compte de service Firebase encodé en base64 (gratuit, sans carte).
       - key: FIREBASE_CREDENTIALS
         sync: false

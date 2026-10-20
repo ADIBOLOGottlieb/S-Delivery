@@ -20,7 +20,7 @@ class Setting extends Model
     protected $keyType = 'string';
 
     public const DEFAULTS = [
-        'merchant_name' => 'VOOM Delivery',
+        'merchant_name' => 'S-Delivery',
         'flooz_merchant_number' => '',
         'mixx_merchant_number' => '',
         // Numéro appelé par « Contacter l'agence » dans l'app.
@@ -34,6 +34,7 @@ class Setting extends Model
         'min_fee' => '1000',
         // auto : agrégateur si ses clés sont configurées, sinon manuel ; manual : capture d'écran ;
         // simulation : paiement fictif pour les tests (aucun argent débité).
+        'payment_mode' => 'auto',
     ];
 
     public static function get(string $key): ?string

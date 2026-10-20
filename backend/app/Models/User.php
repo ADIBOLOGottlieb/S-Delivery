@@ -29,7 +29,20 @@ class User extends Authenticatable
             'role' => Role::class,
             'is_active' => 'boolean',
             'anonymized_at' => 'datetime',
+            'last_lat' => 'float',
+            'last_lng' => 'float',
+            'located_at' => 'datetime',
         ];
+    }
+
+    /** Position récente du livreur (partagée pendant ses courses), sinon null. */
+    public function freshLocation(int $maxAgeMinutes = 10): ?array
+    {
+        if ($this->last_lat === null || $this->last_lng === null || ! $this->located_at?->gt(now()->subMinutes($maxAgeMinutes))) {
+            return null;
+        }
+
+        return ['lat' => $this->last_lat, 'lng' => $this->last_lng, 'updated_at' => $this->located_at->toIso8601String()];
     }
 
     /** Compte supprimé par son titulaire : ne peut plus être réactivé. */

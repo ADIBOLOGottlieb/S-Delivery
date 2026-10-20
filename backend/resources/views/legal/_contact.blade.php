@@ -8,5 +8,5 @@
     @unless ($supportPhone || $supportEmail)
         <li>Depuis l'application : bouton « Contacter l'agence ».</li>
     @endunless
-    <li>Adresse : VOOM Delivery, Lomé, Togo.</li>
+    <li>Adresse : S-Delivery, Lomé, Togo.</li>
 </ul>

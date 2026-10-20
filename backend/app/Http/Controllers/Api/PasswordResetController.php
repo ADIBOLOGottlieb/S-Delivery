@@ -113,9 +113,9 @@ class PasswordResetController extends Controller
 
         try {
             Mail::raw(
-                "Bonjour {$user->name},\n\nVotre code VOOM Delivery pour choisir un nouveau mot de passe : {$code}\n\n"
+                "Bonjour {$user->name},\n\nVotre code S-Delivery pour choisir un nouveau mot de passe : {$code}\n\n"
                 .'Il est valable '.self::CODE_MINUTES." minutes. Si vous n'avez rien demandé, ignorez ce message.",
-                fn ($message) => $message->to($user->email)->subject("Votre code VOOM Delivery : {$code}"),
+                fn ($message) => $message->to($user->email)->subject("Votre code S-Delivery : {$code}"),
             );
         } catch (\Throwable $e) {
             Log::error('Envoi du code de réinitialisation impossible', ['user' => $user->id, 'error' => $e->getMessage()]);

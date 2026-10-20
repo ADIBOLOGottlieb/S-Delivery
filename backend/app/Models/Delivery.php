@@ -16,7 +16,7 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 #[Fillable([
-    'client_id', 'product_id', 'quantity', 'type',
+    'client_id', 'type',
     'pickup_address', 'pickup_lat', 'pickup_lng', 'pickup_contact_name', 'pickup_contact_phone',
     'dropoff_address', 'dropoff_lat', 'dropoff_lng', 'recipient_name', 'recipient_phone',
     'package_description', 'notes', 'scheduled_at', 'deadline_at', 'distance_km', 'delivery_fee',
@@ -34,13 +34,15 @@ class Delivery extends Model
     {
         static::creating(function (Delivery $delivery) {
             $delivery->reference ??= static::generateReference();
+            // Le destinataire donne ce code au livreur : preuve que le colis a été remis à la bonne personne.
+            $delivery->dropoff_code ??= str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
         });
     }
 
     public static function generateReference(): string
     {
         do {
-            $reference = 'VD-'.strtoupper(Str::random(6));
+            $reference = 'SD-'.strtoupper(Str::random(6));
         } while (static::where('reference', $reference)->exists());
 
         return $reference;
@@ -61,6 +63,12 @@ class Delivery extends Model
             'items_amount' => 'integer',
             'total_amount' => 'integer',
             'quantity' => 'integer',
+            'rating' => 'integer',
+            'rated_at' => 'datetime',
+            'last_message_id' => 'integer',
+            'client_read_id' => 'integer',
+            'courier_read_id' => 'integer',
+            'admin_read_id' => 'integer',
             'scheduled_at' => 'datetime',
             'deadline_at' => 'datetime',
             'last_reminder_at' => 'datetime',
@@ -79,11 +87,6 @@ class Delivery extends Model
     public function courier(): BelongsTo
     {
         return $this->belongsTo(User::class, 'courier_id');
-    }
-
-    public function product(): BelongsTo
-    {
-        return $this->belongsTo(Product::class);
     }
 
     public function payments(): HasMany
@@ -112,6 +115,87 @@ class Delivery extends Model
     public function acceptsPhotos(): bool
     {
         return in_array($this->status, [DeliveryStatus::Pending, DeliveryStatus::Assigned], true);
+    }
+
+    // --- Discussion de la course (client, livreur assigné, agence) -------------------------------
+
+    public function messages(): HasMany
+    {
+        return $this->hasMany(DeliveryMessage::class)->oldest('id');
+    }
+
+    /** Écriture possible jusqu'à la fin de la course ; l'agence peut toujours répondre. */
+    public function chatOpenFor(User $user): bool
+    {
+        if ($user->isAdmin()) {
+            return true;
+        }
+        if ($this->status === DeliveryStatus::Cancelled) {
+            return false;
+        }
+        // Après la livraison, quelques heures pour signaler un souci (colis abîmé, oubli…).
+        if ($this->status === DeliveryStatus::Delivered) {
+            return $user->id === $this->client_id && $this->delivered_at?->gt(now()->subHours(24));
+        }
+
+        return $user->id === $this->client_id
+            || ($user->id === $this->courier_id && in_array($this->status, [DeliveryStatus::Assigned, DeliveryStatus::PickedUp], true));
+    }
+
+    /** Ajoute un message ; son auteur a forcément lu la discussion jusque-là. */
+    public function post(?User $sender, array $attributes): DeliveryMessage
+    {
+        $message = $this->messages()->create([...$attributes, 'sender_id' => $sender?->id]);
+
+        $read = match (true) {
+            $sender === null => [],
+            $sender->isAdmin() => ['admin_read_id' => $message->id],
+            $sender->id === $this->courier_id => ['courier_read_id' => $message->id],
+            default => ['client_read_id' => $message->id],
+        };
+        $this->forceFill(['last_message_id' => $message->id, ...$read])->saveQuietly();
+
+        return $message->setRelation('delivery', $this);
+    }
+
+    /** Colonne « lu jusqu'à » du participant (null : pas participant). */
+    private function readColumnFor(User $user): ?string
+    {
+        return match (true) {
+            $user->isAdmin() => 'admin_read_id',
+            $user->id === $this->client_id => 'client_read_id',
+            $user->id === $this->courier_id => 'courier_read_id',
+            default => null,
+        };
+    }
+
+    public function markReadBy(User $user): void
+    {
+        $column = $this->readColumnFor($user);
+        if ($column && $this->last_message_id && $this->{$column} !== $this->last_message_id) {
+            $this->forceFill([$column => $this->last_message_id])->saveQuietly();
+        }
+    }
+
+    /** Messages des autres participants que [user] n'a pas encore lus. */
+    public function unreadFor(User $user): int
+    {
+        $column = $this->readColumnFor($user);
+        if (! $column || ! $this->last_message_id || $this->last_message_id <= ($this->{$column} ?? 0)) {
+            return 0;
+        }
+
+        return $this->messages()
+            ->where('id', '>', $this->{$column} ?? 0)
+            ->where(fn ($q) => $q->whereNull('sender_id')->orWhere('sender_id', '!=', $user->id))
+            ->count();
+    }
+
+    // --- Note du livreur ------------------------------------------------------------------------
+
+    public function canBeRated(): bool
+    {
+        return $this->status === DeliveryStatus::Delivered && $this->rating === null;
     }
 
     // --- Règles métier -------------------------------------------------------
@@ -178,10 +262,13 @@ class Delivery extends Model
         });
     }
 
-    /** Transition effectuée par le livreur : assigned -> picked_up -> delivered. */
-    public function advanceByCourier(DeliveryStatus $target, ?User $courier = null): void
+    /**
+     * Transition effectuée par le livreur : assigned -> picked_up -> delivered.
+     * La remise exige le code du destinataire (sauf anciennes livraisons sans code).
+     */
+    public function advanceByCourier(DeliveryStatus $target, ?User $courier = null, ?string $code = null): void
     {
-        DB::transaction(function () use ($target, $courier) {
+        DB::transaction(function () use ($target, $courier, $code) {
             $fresh = $this->lockFresh();
             if ($courier && $fresh->courier_id !== $courier->id) {
                 throw ValidationException::withMessages(['status' => 'Cette course a été confiée à un autre livreur.']);
@@ -196,6 +283,15 @@ class Delivery extends Model
             if ($allowed !== $target) {
                 throw ValidationException::withMessages([
                     'status' => "Transition impossible : {$fresh->status->label()} → {$target->label()}.",
+                ]);
+            }
+
+            if ($target === DeliveryStatus::Delivered && $fresh->dropoff_code !== null
+                && ! hash_equals($fresh->dropoff_code, preg_replace('/\D/', '', (string) $code))) {
+                throw ValidationException::withMessages([
+                    'code' => $code === null || $code === ''
+                        ? 'Demandez au destinataire le code de remise à 4 chiffres.'
+                        : "Code de remise incorrect. Vérifiez avec le destinataire ou appelez l'agence.",
                 ]);
             }
 
@@ -218,7 +314,17 @@ class Delivery extends Model
     /** Annulation depuis l'app : recontrôlée sous verrou (une preuve a pu arriver entre-temps). */
     public function cancelByClient(string $reason): void
     {
-        $this->cancelWhen(fn (self $fresh) => $fresh->canBeCancelledByClient() ? null : $fresh->clientCancelRefusal(), $reason);
+        $this->cancelWhen(function (self $fresh) {
+            if (! $fresh->canBeCancelledByClient()) {
+                return $fresh->clientCancelRefusal();
+            }
+
+            // Paiement en ligne en cours de validation : l'annuler maintenant obligerait à rembourser.
+            return $fresh->payments()->where('status', PaymentStatus::Pending)
+                ->where('created_at', '>', now()->subMinutes(30))->exists()
+                ? "Un paiement est en cours de validation : patientez quelques minutes avant d'annuler."
+                : null;
+        }, $reason);
     }
 
     public function clientCancelRefusal(): string

@@ -8,7 +8,6 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\DeliveryResource;
 use App\Models\Delivery;
 use App\Models\Media;
-use App\Models\Product;
 use App\Services\Payments\PaymentService;
 use App\Services\PricingService;
 use Closure;
@@ -21,7 +20,7 @@ use Illuminate\Validation\ValidationException;
 /** Demandes de livraison côté client. */
 class DeliveryController extends Controller
 {
-    private const RELATIONS = ['courier', 'client', 'product', 'latestPayment', 'photos', 'deliveryRequest'];
+    public const RELATIONS = ['courier', 'client', 'latestPayment', 'photos', 'deliveryRequest'];
 
     private const MAX_PHOTOS = 6;
 
@@ -54,9 +53,7 @@ class DeliveryController extends Controller
     {
         $data = $request->validate([
             'type' => $this->typeRules(),
-            'product_id' => ['bail', 'nullable', 'integer', Rule::exists('products', 'id')->where('is_active', true)],
-            'quantity' => ['required_with:product_id', 'nullable', 'integer', 'min:1', 'max:100'],
-            'pickup_address' => ['required_without:product_id', 'nullable', 'string', 'max:255'],
+            'pickup_address' => ['required', 'string', 'max:255'],
             'pickup_contact_name' => ['nullable', 'string', 'max:255'],
             'pickup_contact_phone' => ['nullable', 'string', 'max:30'],
             'dropoff_address' => ['required', 'string', 'max:255'],
@@ -67,31 +64,17 @@ class DeliveryController extends Controller
             'scheduled_at' => ['nullable', 'required_if:type,programmee', 'date', 'after:now'],
             // Heure limite de livraison choisie par le client (au moins 30 min pour laisser le temps au livreur).
             'deadline_at' => ['nullable', 'date', 'after:'.now()->addMinutes(29)->toIso8601String(), $this->afterScheduledAt($request)],
-            ...$this->coordinateRules(pickupRequired: ! $request->filled('product_id')),
+            ...$this->coordinateRules(),
         ], $this->messages());
 
         $type = DeliveryType::from($data['type']);
-        $itemsAmount = 0;
-
-        // Commande marketplace : le point A est le vendeur défini par l'admin (c'est lui que le livreur appelle).
-        if (! empty($data['product_id'])) {
-            $product = Product::findOrFail($data['product_id']);
-            $data['pickup_address'] = $product->pickup_address;
-            $data['pickup_lat'] = $product->pickup_lat;
-            $data['pickup_lng'] = $product->pickup_lng;
-            $data['pickup_contact_name'] = $product->vendor_name;
-            $data['pickup_contact_phone'] = $product->vendor_phone;
-            $data['package_description'] ??= "{$data['quantity']} × {$product->name}";
-            $itemsAmount = $product->price * $data['quantity'];
-        }
-
         $quote = $this->pricing->quote($type, $data['pickup_lat'], $data['pickup_lng'], $data['dropoff_lat'], $data['dropoff_lng']);
 
         $delivery = $request->user()->deliveries()->create([
             ...$data,
             ...$quote,
-            'items_amount' => $itemsAmount,
-            'total_amount' => $quote['delivery_fee'] + $itemsAmount,
+            'items_amount' => 0,
+            'total_amount' => $quote['delivery_fee'],
         ]);
 
         return (new DeliveryResource($delivery->load(self::RELATIONS)))
@@ -157,6 +140,34 @@ class DeliveryController extends Controller
         return new DeliveryResource($delivery->load(self::RELATIONS));
     }
 
+    /** Note du livreur (1 à 5 étoiles), une seule fois après la livraison. */
+    public function rate(Request $request, Delivery $delivery): DeliveryResource
+    {
+        $this->authorizeOwner($request, $delivery);
+
+        $data = $request->validate([
+            'rating' => ['required', 'integer', 'between:1,5'],
+            'comment' => ['nullable', 'string', 'max:500'],
+        ], [
+            'rating.required' => 'Choisissez une note de 1 à 5 étoiles.',
+            'rating.between' => 'Choisissez une note de 1 à 5 étoiles.',
+        ]);
+
+        if (! $delivery->canBeRated()) {
+            throw ValidationException::withMessages(['rating' => $delivery->rating !== null
+                ? 'Vous avez déjà noté cette livraison.'
+                : 'Vous pourrez noter le livreur une fois le colis livré.']);
+        }
+
+        $delivery->forceFill([
+            'rating' => $data['rating'],
+            'rating_comment' => filled($data['comment'] ?? null) ? trim($data['comment']) : null,
+            'rated_at' => now(),
+        ])->save();
+
+        return new DeliveryResource($delivery->load(self::RELATIONS));
+    }
+
     private function authorizeOwner(Request $request, Delivery $delivery): void
     {
         abort_unless($delivery->client_id === $request->user()->id, 404);
@@ -187,12 +198,6 @@ class DeliveryController extends Controller
             'type.required' => 'Choisissez un type de livraison.',
             'type.enum' => 'Type de livraison invalide.',
             'type.not_in' => "La livraison Express n'est plus proposée : choisissez Plis, Colis ou Programmée.",
-            'product_id.integer' => "Ce produit n'est plus disponible.",
-            'product_id.exists' => "Ce produit n'est plus disponible.",
-            'quantity.required_with' => 'Indiquez la quantité.',
-            'quantity.integer' => 'La quantité doit être un nombre entier.',
-            'quantity.min' => 'La quantité doit être au moins 1.',
-            'quantity.max' => 'La quantité ne peut pas dépasser 100.',
             'scheduled_at.required_if' => "Choisissez la date et l'heure de passage.",
             'scheduled_at.date' => 'Date de passage invalide.',
             'scheduled_at.after' => "L'heure de passage doit être dans le futur.",
@@ -202,13 +207,11 @@ class DeliveryController extends Controller
     }
 
     /** @return array<string, array<int, string>> */
-    private function coordinateRules(bool $pickupRequired = true): array
+    private function coordinateRules(): array
     {
-        $pickup = $pickupRequired ? 'required' : 'nullable';
-
         return [
-            'pickup_lat' => [$pickup, 'numeric', 'between:-90,90'],
-            'pickup_lng' => [$pickup, 'numeric', 'between:-180,180'],
+            'pickup_lat' => ['required', 'numeric', 'between:-90,90'],
+            'pickup_lng' => ['required', 'numeric', 'between:-180,180'],
             'dropoff_lat' => ['required', 'numeric', 'between:-90,90'],
             'dropoff_lng' => ['required', 'numeric', 'between:-180,180'],
         ];

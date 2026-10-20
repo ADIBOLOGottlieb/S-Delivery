@@ -62,8 +62,14 @@
                 <h2 class="font-semibold mb-3">Détails</h2>
                 <dl class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
                     <dt class="text-gray-500">Client</dt><dd>{{ $delivery->client->name }} · {{ $delivery->client->phone_number }}</dd>
-                    @if ($delivery->product)
-                        <dt class="text-gray-500">Produit</dt><dd>{{ $delivery->quantity }} × {{ $delivery->product->name }}</dd>
+                    @if ($delivery->dropoff_code)
+                        {{-- À donner au livreur si le destinataire n'a pas reçu le code. --}}
+                        <dt class="text-gray-500">Code de remise</dt><dd class="font-mono font-bold tracking-widest">{{ $delivery->dropoff_code }}</dd>
+                    @endif
+                    @if ($delivery->rating)
+                        <dt class="text-gray-500">Note du client</dt>
+                        <dd>{{ str_repeat('★', $delivery->rating) }}{{ str_repeat('☆', 5 - $delivery->rating) }}
+                            @if ($delivery->rating_comment)<span class="text-gray-600"> · « {{ $delivery->rating_comment }} »</span>@endif</dd>
                     @endif
                     <dt class="text-gray-500">Description</dt><dd>{{ $delivery->package_description ?: '—' }}</dd>
                     <dt class="text-gray-500">Notes</dt><dd>{{ $delivery->notes ?: '—' }}</dd>
@@ -112,6 +118,42 @@
                 </section>
             @endif
 
+            {{-- Discussion de la course (client, livreur, agence) --}}
+            <section class="bg-white rounded-lg shadow-sm p-5">
+                <h2 class="font-semibold mb-3">Discussion</h2>
+                <div class="space-y-2 max-h-96 overflow-y-auto bg-neutral-50 rounded-lg p-3">
+                    @forelse ($delivery->messages as $m)
+                        @php($role = $m->setRelation('delivery', $delivery)->senderRole())
+                        <div class="flex {{ $role === 'agency' ? 'justify-end' : ($role === 'system' ? 'justify-center' : 'justify-start') }}">
+                            @if ($role === 'system')
+                                <span class="text-xs text-gray-500">{{ $m->body }} · {{ $m->created_at->format('H:i') }}</span>
+                            @else
+                                <div class="max-w-[75%] rounded-2xl px-3 py-2 text-sm {{ $role === 'agency' ? 'bg-black text-white' : 'bg-white border' }}">
+                                    <div class="text-xs font-semibold {{ $role === 'agency' ? 'text-brand' : ($role === 'courier' ? 'text-blue-700' : 'text-gray-600') }}">
+                                        {{ ['client' => 'Client', 'courier' => 'Livreur', 'agency' => 'Agence'][$role] }} · {{ $m->sender?->name }}
+                                    </div>
+                                    @if ($m->media)
+                                        <a href="{{ $m->media->url() }}" target="_blank"><img src="{{ $m->media->url() }}" alt="Photo" class="mt-1 rounded max-h-48"></a>
+                                    @endif
+                                    @if ($m->lat !== null)
+                                        <a href="{{ $maps($m->lat, $m->lng) }}" target="_blank" class="underline">📍 Position partagée</a>
+                                    @endif
+                                    @if ($m->body)<p class="whitespace-pre-line">{{ $m->body }}</p>@endif
+                                    <div class="text-[10px] opacity-60 text-right">{{ $m->created_at->format('d/m H:i') }}</div>
+                                </div>
+                            @endif
+                        </div>
+                    @empty
+                        <p class="text-sm text-gray-500 text-center py-6">Aucun message pour cette course.</p>
+                    @endforelse
+                </div>
+                <form method="POST" action="{{ route('admin.deliveries.message', $delivery) }}" class="flex gap-2 mt-3">
+                    @csrf
+                    <input name="body" required maxlength="2000" placeholder="Écrire au client et au livreur…" class="flex-1 border rounded-lg px-3 py-2">
+                    <button class="bg-black text-brand font-semibold rounded-lg px-4 py-2">Envoyer</button>
+                </form>
+            </section>
+
             {{-- Paiements --}}
             <section class="bg-white rounded-lg shadow-sm p-5">
                 <h2 class="font-semibold mb-3">Paiements</h2>
@@ -122,6 +164,11 @@
                                 <img src="{{ route('admin.payments.screenshot', $payment) }}" alt="Capture de la transaction"
                                      class="w-full max-h-80 object-contain bg-gray-50 rounded border">
                             </a>
+                        @elseif ($payment->isGateway())
+                            <div class="rounded border bg-gray-50 p-4 text-sm text-gray-600 flex flex-col justify-center">
+                                <span class="font-semibold text-gray-800">Paiement en ligne · {{ ['kkiapay' => 'KKiaPay', 'paygate' => 'PayGate', 'simulation' => 'Simulation'][$payment->gateway] ?? $payment->gateway }}</span>
+                                <span class="text-xs mt-1">Vérifié automatiquement auprès de l'agrégateur.</span>
+                            </div>
                         @else
                             <div class="rounded border bg-gray-50 p-4 text-sm text-gray-600 flex flex-col justify-center">
                                 <span class="font-semibold text-gray-800">Validé par l'agence</span>
@@ -184,7 +231,7 @@
                                 </option>
                             @endforeach
                         </select>
-                        <button class="w-full bg-black text-voom font-semibold rounded py-2">
+                        <button class="w-full bg-black text-brand font-semibold rounded py-2">
                             {{ $delivery->courier ? 'Réassigner' : 'Assigner' }}
                         </button>
                     </form>
@@ -196,7 +243,7 @@
                         <p class="text-sm font-semibold">Valider le paiement manuellement</p>
                         <p class="text-xs text-gray-500">Espèces, virement vérifié sur le compte marchand ou test.</p>
                         <select name="method" class="w-full border rounded px-3 py-2">
-                            @foreach (\App\Enums\PaymentMethod::cases() as $method)
+                            @foreach (\App\Enums\PaymentMethod::mobileMoney() as $method)
                                 <option value="{{ $method->value }}">{{ $method->label() }}</option>
                             @endforeach
                         </select>

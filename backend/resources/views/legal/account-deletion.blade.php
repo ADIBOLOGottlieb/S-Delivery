@@ -3,13 +3,13 @@
 @section('title', 'Supprimer mon compte')
 
 @section('content')
-    <h1>Supprimer mon compte VOOM Delivery</h1>
+    <h1>Supprimer mon compte S-Delivery</h1>
     <p class="muted">Vous pouvez supprimer votre compte à tout moment, gratuitement.</p>
 
     <h2>Depuis l'application (le plus simple)</h2>
     <div class="card">
         <ol class="steps">
-            <li>Ouvrez l'application VOOM Delivery et connectez-vous.</li>
+            <li>Ouvrez l'application S-Delivery et connectez-vous.</li>
             <li>Allez dans <strong>Profil › Supprimer mon compte</strong>.</li>
             <li>Saisissez votre mot de passe pour confirmer. La suppression est immédiate.</li>
         </ol>

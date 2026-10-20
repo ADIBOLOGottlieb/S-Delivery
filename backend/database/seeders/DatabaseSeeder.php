@@ -22,15 +22,6 @@ class DatabaseSeeder extends Seeder
 
     public function run(): void
     {
-        // Catalogue marketplace : créé une seule fois, y compris en production.
-        $this->call(ProductCatalogSeeder::class);
-        // Sous-catégories Agro + packs d'exemple : une seule fois.
-        $this->call(CatalogStructureSeeder::class);
-        // Courses alimentaires : Poissons et fruits de mer, Légumes, Céréales et conserves, Fruits, Viandes.
-        $this->call(FoodCatalogSeeder::class);
-        // Photos réalistes des produits (livrées avec l'app), une seule fois : une photo retirée ne revient pas.
-        $this->call(CatalogImageSeeder::class);
-
         $this->seedAdmin();
 
         if (app()->environment('local')) {
@@ -47,7 +38,7 @@ class DatabaseSeeder extends Seeder
     private function seedAdmin(): void
     {
         $local = app()->environment('local');
-        $email = Identifier::email(env('ADMIN_EMAIL') ?: ($local ? 'admin@voom.tg' : null));
+        $email = Identifier::email(env('ADMIN_EMAIL') ?: ($local ? 'admin@sdelivery.tg' : null));
         $password = env('ADMIN_PASSWORD') ?: ($local ? self::LOCAL_ADMIN_PASSWORD : null);
 
         if ($email === null) {
@@ -86,7 +77,7 @@ class DatabaseSeeder extends Seeder
         }
 
         User::create([
-            'name' => 'Administrateur VOOM',
+            'name' => 'Administrateur S-Delivery',
             'email' => $email,
             'phone_number' => $phone,
             'password' => $password,
@@ -100,7 +91,7 @@ class DatabaseSeeder extends Seeder
     {
         User::updateOrCreate(['phone_number' => '+22891000001'], [
             'name' => 'Kossi Livreur (démo)',
-            'email' => 'livreur@voom.tg',
+            'email' => 'livreur@sdelivery.tg',
             'password' => 'password123',
             'role' => Role::Courier,
             'vehicle' => 'Moto · TG-0001-AA',
@@ -109,7 +100,7 @@ class DatabaseSeeder extends Seeder
 
         User::updateOrCreate(['phone_number' => '+22892000001'], [
             'name' => 'Ama Cliente (démo)',
-            'email' => 'client@voom.tg',
+            'email' => 'client@sdelivery.tg',
             'password' => 'password123',
             'role' => Role::Client,
             'is_active' => true,

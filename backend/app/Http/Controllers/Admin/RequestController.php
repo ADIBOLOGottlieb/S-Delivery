@@ -190,7 +190,7 @@ class RequestController extends Controller
     private function notifyClient(DeliveryRequest $deliveryRequest, string $body): void
     {
         // Un push raté (Firebase indisponible) ne doit pas faire échouer l'action de l'agence.
-        rescue(fn () => $this->push->toUser($deliveryRequest->client, 'VOOM Delivery', $body, [
+        rescue(fn () => $this->push->toUser($deliveryRequest->client, 'S-Delivery', $body, [
             'type' => 'chat',
             'request_id' => (string) $deliveryRequest->id,
         ]));

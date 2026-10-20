@@ -6,7 +6,6 @@ use App\Http\Controllers\Admin\RequestController;
 use App\Models\Delivery;
 use App\Models\DeliveryRequest;
 use App\Models\Payment;
-use App\Models\Product;
 use App\Models\User;
 use App\Services\PushNotifier;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -103,7 +102,7 @@ class DeliveryConsistencyTest extends TestCase
 
         Sanctum::actingAs($second);
         $this->postJson("/api/v1/courier/deliveries/{$d->id}/status", ['status' => 'picked_up'])->assertOk();
-        $this->postJson("/api/v1/courier/deliveries/{$d->id}/status", ['status' => 'delivered'])->assertOk();
+        $this->postJson("/api/v1/courier/deliveries/{$d->id}/status", ['status' => 'delivered', 'code' => $d->refresh()->dropoff_code])->assertOk();
 
         // Client : refus, confirmation, livreur (x2), récupéré, livré — toujours exactement {type, delivery_id}.
         $this->assertSame(array_fill(0, 6, $expected), $this->pushesTo($client));
@@ -207,32 +206,6 @@ class DeliveryConsistencyTest extends TestCase
         $this->get(route('admin.deliveries.show', $second))->assertOk()->assertSee(route('admin.payments.screenshot', $legacy));
     }
 
-    public function test_product_order_calls_the_vendor_not_the_client(): void
-    {
-        $product = Product::create([
-            'category' => 'agro', 'name' => 'Tomates', 'price' => 800, 'unit' => 'kg', 'vendor_name' => 'Mama Tomates',
-            'vendor_phone' => '+22890000001', 'pickup_address' => 'Marché', 'pickup_lat' => 6.13, 'pickup_lng' => 1.22, 'is_active' => true,
-        ]);
-        $silent = Product::create([
-            'category' => 'agro', 'name' => 'Oignons', 'price' => 500, 'unit' => 'kg',
-            'pickup_address' => 'Marché', 'pickup_lat' => 6.13, 'pickup_lng' => 1.22, 'is_active' => true,
-        ]);
-        $payload = fn (Product $p) => collect($this->payload(['product_id' => $p->id, 'quantity' => 1]))
-            ->except(['pickup_address', 'pickup_lat', 'pickup_lng'])->all();
-
-        Sanctum::actingAs(User::factory()->create());
-        $this->postJson('/api/v1/deliveries', $payload($product))->assertCreated()
-            ->assertJsonPath('data.pickup.contact_name', 'Mama Tomates')
-            ->assertJsonPath('data.pickup.contact_phone', '+22890000001');
-        $this->postJson('/api/v1/deliveries', $payload($silent))->assertCreated()
-            ->assertJsonPath('data.pickup.contact_name', null)
-            ->assertJsonPath('data.pickup.contact_phone', null);
-
-        $silent->update(['is_active' => false]);
-        $this->postJson('/api/v1/deliveries', $payload($silent))->assertUnprocessable()
-            ->assertJsonPath('errors.product_id.0', "Ce produit n'est plus disponible.");
-    }
-
     public function test_express_is_refused_by_the_app_and_deadline_must_follow_schedule(): void
     {
         Sanctum::actingAs(User::factory()->create());
@@ -265,11 +238,8 @@ class DeliveryConsistencyTest extends TestCase
         $request = $client->deliveryRequests()->create(['parcel_amount' => 12000]);
         $request->post($client, ['body' => 'Bonjour']);
 
-        // Une commande de produit ne sert pas à pré-remplir le point A.
+        // Le dernier point A du client pré-remplit la programmation.
         $client->deliveries()->create([...$this->payload(['pickup_address' => 'Boutique Bè']), 'distance_km' => 3, 'delivery_fee' => 1000, 'total_amount' => 1000]);
-        $product = Product::create(['category' => 'agro', 'name' => 'Riz', 'price' => 100, 'unit' => 'kg',
-            'pickup_address' => 'Grand marché', 'pickup_lat' => 6.13, 'pickup_lng' => 1.22, 'is_active' => true]);
-        $client->deliveries()->create([...$this->payload(['pickup_address' => 'Grand marché']), 'product_id' => $product->id, 'quantity' => 1, 'distance_km' => 3, 'delivery_fee' => 1000, 'total_amount' => 1000]);
         $this->actingAs($admin)->get(route('admin.requests.show', $request))->assertOk()->assertSee('Boutique Bè');
 
         $schedule = fn (array $o = []) => $this->actingAs($admin)->post(route('admin.requests.schedule', $request), [

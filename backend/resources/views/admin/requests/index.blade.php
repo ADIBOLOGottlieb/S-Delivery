@@ -15,7 +15,7 @@
         <nav class="flex gap-1 text-sm bg-white rounded-lg shadow-sm p-1">
             @foreach ($tabs as $key => $label)
                 <a href="{{ route('admin.requests.index', ['status' => $key]) }}"
-                   class="px-3 py-1.5 rounded {{ $status === $key ? 'bg-black text-voom font-semibold' : 'text-gray-600 hover:bg-gray-100' }}">{{ $label }}</a>
+                   class="px-3 py-1.5 rounded {{ $status === $key ? 'bg-black text-brand font-semibold' : 'text-gray-600 hover:bg-gray-100' }}">{{ $label }}</a>
             @endforeach
         </nav>
     </div>
@@ -24,7 +24,7 @@
         @forelse ($requests as $req)
             @php($unread = $req->hasUnreadForAdmin())
             <a href="{{ route('admin.requests.show', $req) }}" class="flex items-center gap-4 px-4 py-3 hover:bg-gray-50">
-                <span class="w-10 h-10 rounded-full bg-black text-voom flex items-center justify-center font-bold shrink-0">
+                <span class="w-10 h-10 rounded-full bg-black text-brand flex items-center justify-center font-bold shrink-0">
                     {{ mb_strtoupper(mb_substr($req->client->name, 0, 1)) }}
                 </span>
                 <div class="min-w-0 flex-1">

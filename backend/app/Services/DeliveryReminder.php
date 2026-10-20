@@ -79,7 +79,7 @@ class DeliveryReminder
             'payment_rejected' => ['Paiement refusé', "Le paiement de la livraison {$ref} a été refusé : {$detail}. Renvoyez une preuve depuis l'application."],
             'assigned' => ['Livreur assigné 🛵', ($delivery->courier?->name ?? 'Un livreur')." s'occupe de votre livraison {$ref}."],
             'picked_up' => ['Colis récupéré', "Votre colis {$ref} a été récupéré et est en route."],
-            'delivered' => ['Colis livré ✅', "La livraison {$ref} est terminée. Merci d'avoir choisi VOOM Delivery !"],
+            'delivered' => ['Colis livré ✅', "La livraison {$ref} est terminée. Merci d'avoir choisi S-Delivery !"],
             'cancelled' => ['Livraison annulée', "La livraison {$ref} a été annulée par l'agence".($detail ? " : {$detail}" : '').'.'
                 .($delivery->needsRefund() ? ' Votre paiement vous sera remboursé.' : '')],
         };

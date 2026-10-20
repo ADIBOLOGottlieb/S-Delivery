@@ -35,6 +35,6 @@
             Compte actif (le livreur peut se connecter et recevoir des livraisons)
         </label>
 
-        <button class="bg-black text-voom font-semibold rounded px-6 py-2">Enregistrer</button>
+        <button class="bg-black text-brand font-semibold rounded px-6 py-2">Enregistrer</button>
     </form>
 @endsection

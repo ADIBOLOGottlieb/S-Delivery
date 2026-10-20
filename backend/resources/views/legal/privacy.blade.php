@@ -4,10 +4,10 @@
 
 @section('content')
     <h1>Politique de confidentialité</h1>
-    <p class="muted">Application mobile et service VOOM Delivery · dernière mise à jour : 18 octobre 2026</p>
+    <p class="muted">Application mobile et service S-Delivery · dernière mise à jour : 18 octobre 2026</p>
 
     <h2>Responsable du traitement</h2>
-    <p><strong>VOOM Delivery</strong>, agence de livraison à Lomé, Togo. Pour toute question sur vos données :</p>
+    <p><strong>S-Delivery</strong>, agence de livraison à Lomé, Togo. Pour toute question sur vos données :</p>
     @include('legal._contact')
 
     <h2>Données collectées</h2>
