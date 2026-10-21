@@ -105,7 +105,7 @@ jobs:
             Android de S-Delivery (commit ${{ github.sha }}).
             - s-delivery.apk : installation directe sur le téléphone.
             - s-delivery.aab : à envoyer sur la Google Play Console.
-            API : https://voom-delivery-api.onrender.com/api/v1
+            API : https://s-delivery-api.onrender.com/api/v1
           files: |
             s-delivery.apk
             s-delivery.aab

@@ -18,7 +18,7 @@ jobs:
         run: |
           curl -fsS -o /dev/null --retry 3 --retry-delay 10 --max-time 90 \
             -w "HTTP %{http_code} en %{time_total}s\n" \
-            https://voom-delivery-api.onrender.com/up
+            https://s-delivery-api.onrender.com/up
 
       # Rappels push aux livreurs (livraisons urgentes) ; même valeur que CRON_SECRET dans Render.
       - name: Rappels livreurs (secret CRON_SECRET, optionnel)
@@ -27,7 +27,7 @@ jobs:
         run: |
           if [ -n "$CRON_SECRET" ]; then
             curl -fsS --max-time 60 -X POST -H "X-Cron-Key: $CRON_SECRET" -H "Accept: application/json" \
-              https://voom-delivery-api.onrender.com/api/v1/cron/run
+              https://s-delivery-api.onrender.com/api/v1/cron/run
           else
             echo "CRON_SECRET non défini : rappels non déclenchés."
           fi

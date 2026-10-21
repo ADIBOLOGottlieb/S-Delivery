@@ -101,15 +101,16 @@ flutter run                                                     # émulateur And
 flutter run --dart-define=API_BASE_URL=http://IP_DU_PC:8000/api/v1   # téléphone sur le même Wi-Fi
 ```
 
-Cartes **OpenStreetMap** (`flutter_map`) et adresses via **Nominatim**, sans clé. En release, l'app utilise `https://voom-delivery-api.onrender.com/api/v1`.
+Cartes **OpenStreetMap** (`flutter_map`) et adresses via **Nominatim**, sans clé. En release, l'app utilise `https://s-delivery-api.onrender.com/api/v1`.
 
 Tests : `flutter test` · analyse : `flutter analyze`.
 
 ## Déploiement de l'API sur Render
 
-1. Render › **New** › **Blueprint** › ce dépôt : `render.yaml` crée le service **`voom-delivery-api`** (Docker, `backend/`) et la base PostgreSQL.
-2. Renseigner `ADMIN_EMAIL`, `ADMIN_PHONE`, `ADMIN_PASSWORD` et les clés de paiement.
-3. Au démarrage, le conteneur exécute les migrations et crée le compte admin.
+1. Render › **New** › **Blueprint** › ce dépôt : `render.yaml` crée le service **`s-delivery-api`** (Docker, `backend/`).
+2. Dans les variables d'environnement du service, renseigner `DB_URL` avec l'URL interne de la base PostgreSQL Render existante. Le Blueprint ne crée pas de base.
+3. Renseigner `ADMIN_EMAIL`, `ADMIN_PHONE`, `ADMIN_PASSWORD` et les clés de paiement.
+4. Au démarrage, le conteneur exécute les migrations et crée le compte admin.
 
 > ⚠️ Plan gratuit : la base PostgreSQL gratuite expire après 30 jours. Pour la production, passer en plan payant.
 

@@ -5,7 +5,7 @@
 ///
 /// Par défaut : l'API Render en release, sinon 10.0.2.2 (la machine hôte vue depuis l'émulateur Android).
 class ApiConfig {
-  static const String productionUrl = 'https://voom-delivery-api.onrender.com/api/v1';
+  static const String productionUrl = 'https://s-delivery-api.onrender.com/api/v1';
 
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
